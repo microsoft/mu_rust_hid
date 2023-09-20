@@ -1,0 +1,4 @@
+[package]
+name = "hid_report_descriptor_parser"
+version = "0.1.0"
+edition = "2021"
