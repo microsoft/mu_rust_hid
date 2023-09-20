@@ -1,0 +1,54 @@
+## @file
+# Azure Pipeline build file to build and test code in this repo.
+#
+# Copyright (c) Microsoft Corporation.
+# SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+trigger:
+- main
+
+pr:
+- main
+
+resources:
+  repositories:
+    - repository: mu_devops
+      type: github
+      endpoint: microsoft
+      name: microsoft/mu_devops
+      ref: main
+
+parameters:
+  - name: matrix
+    type: object
+    default:
+      Linux:
+        ImageName: ubuntu-latest
+        ContainerImage: ghcr.io/microsoft/mu_devops/ubuntu-22-build:latest
+      Windows:
+        ImageName: windows-latest
+
+jobs:
+  - ${{ each item in parameters.matrix }}:
+    - job: BuildAndTest_${{ item.Key }}
+      displayName: Build and Test ${{ item.Key }}
+
+      pool:
+        vmImage: ${{ item.Value.ImageName }}
+
+      ${{ if item.Value.ContainerImage }}:
+        container:
+          image: ${{ item.Value.ContainerImage }}
+          options: --user root --name mu_devops_build_container --security-opt seccomp=unconfined
+
+      workspace:
+        clean: all
+
+      steps:
+      - checkout: self
+        fetchDepth: 1
+        clean: true
+
+      - template: Steps/RustSetupSteps.yml@mu_devops
+      - template: Steps/RustCargoSteps.yml@mu_devops
