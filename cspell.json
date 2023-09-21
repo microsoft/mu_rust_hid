@@ -1,0 +1,26 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "dictionaries": [
+      "companies ",
+      "softwareTerms",
+      "python",
+      "rust"
+  ],
+  "ignorePaths": [
+      "*.pdb",
+      "**/*_extdep/**",
+      "*.pdf",
+      "*.exe",
+      "*.jpg"
+  ],
+  "minWordLength": 5,
+  "allowCompoundWords": true,
+  "maxNumberOfProblems": 200,
+  "maxDuplicateProblems": 200,
+  "ignoreWords": [
+  ],
+  "words": [
+    "upvote"
+  ]
+}
