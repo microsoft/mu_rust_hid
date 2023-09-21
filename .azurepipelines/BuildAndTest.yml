@@ -50,5 +50,14 @@ jobs:
         fetchDepth: 1
         clean: true
 
+      # Only run on Windows since it does not use a container and can
+      # depend on a wider toolset provided in the VM image.
+      - ${{ if eq(item.Value.ImageName, 'windows-latest') }}:
+        - template: Steps/InstallMarkdownLint.yml@mu_devops
+        - template: Steps/RunMarkdownLint.yml@mu_devops
+        - template: Steps/InstallSpellCheck.yml@mu_devops
+        - template: Steps/RunSpellCheck.yml@mu_devops
+          parameters:
+            spell_check_parameters: "-c cspell.json **/*.md **/*.py **/*.rs"
       - template: Steps/RustSetupSteps.yml@mu_devops
       - template: Steps/RustCargoSteps.yml@mu_devops
