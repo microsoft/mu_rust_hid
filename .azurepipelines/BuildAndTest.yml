@@ -17,7 +17,7 @@ resources:
       type: github
       endpoint: microsoft
       name: microsoft/mu_devops
-      ref: main
+      ref: parameterize_cargo_steps
 
 parameters:
   - name: matrix
@@ -61,3 +61,6 @@ jobs:
             spell_check_parameters: "-c cspell.json **/*.md **/*.py **/*.rs"
       - template: Steps/RustSetupSteps.yml@mu_devops
       - template: Steps/RustCargoSteps.yml@mu_devops
+        parameters:
+          test_command: "cargo test --all"
+          build_command: "cargo build"
