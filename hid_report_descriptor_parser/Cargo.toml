@@ -1,0 +1,9 @@
+[package]
+name = "hid_report_descriptor_parser"
+version = "0.1.0"
+edition = "2021"
+license = "BSD-2-Clause-Patent"
+description = "HID report descriptor parsing library"
+repository = "https://github.com/microsoft/mu_rust_hid"
+keywords = ["hid"]
+categories = ["no-std", "parser-implementations"]

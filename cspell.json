@@ -21,6 +21,7 @@
   "ignoreWords": [
   ],
   "words": [
+    "rustfmt",
     "upvote"
   ]
 }
