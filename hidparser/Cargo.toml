@@ -7,3 +7,7 @@ description = "HID report descriptor parsing library"
 repository = "https://github.com/microsoft/mu_rust_hid"
 keywords = ["hid"]
 categories = ["no-std", "parser-implementations"]
+
+[features]
+default = []
+std = []

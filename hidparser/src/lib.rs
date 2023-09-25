@@ -87,7 +87,7 @@
 //! SPDX-License-Identifier: BSD-2-Clause-Patent
 //!
 
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 mod item_tokenizer;
 pub mod report_data_types;
 pub mod report_descriptor_parser;
