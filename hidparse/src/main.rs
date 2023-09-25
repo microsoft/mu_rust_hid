@@ -2,7 +2,7 @@
 //!
 //! Simple command line utility that supports parsing descriptors and printing the results.
 //!
-//! Demonstrates the usage of the [`hid_report_descriptor_parser`] crate.
+//! Demonstrates the usage of the [`hidparser`] crate.
 //!
 //! # Usage
 //!
@@ -24,7 +24,7 @@ use std::{
 };
 
 use clap::{Parser, ValueEnum};
-use hid_report_descriptor_parser::{parse_report_descriptor, ReportField};
+use hidparser::{parse_report_descriptor, ReportField};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 

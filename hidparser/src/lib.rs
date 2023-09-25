@@ -8,11 +8,11 @@
 //!
 //! ## Example
 //! ```
-//! # use hid_report_descriptor_parser::parse_report_descriptor;
-//! # use hid_report_descriptor_parser::report_data_types::Usage;
-//! # use hid_report_descriptor_parser::report_data_types::UsagePage;
-//! # use hid_report_descriptor_parser::ReportField;
-//! # use hid_report_descriptor_parser::report_data_types::UsageRange;
+//! # use hidparser::parse_report_descriptor;
+//! # use hidparser::report_data_types::Usage;
+//! # use hidparser::report_data_types::UsagePage;
+//! # use hidparser::ReportField;
+//! # use hidparser::report_data_types::UsageRange;
 //!
 //!   let BOOT_KEYBOARD_REPORT_DESCRIPTOR: &[u8] = &[
 //!     0x05, 0x01, // USAGE_PAGE (Generic Desktop)

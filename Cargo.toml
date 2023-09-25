@@ -1,17 +1,13 @@
-[package]
-name = "hidparse"
-version = "0.1.0"
-edition = "2021"
-license = "BSD-2-Clause-Patent"
-description = "HID report descriptor parsing command line utility"
-repository = "https://github.com/microsoft/mu_rust_hid"
-keywords = ["hid"]
-categories = ["command-line-utilities"]
-
 [workspace]
+resolver = "2"
 
-[dependencies]
-hid_report_descriptor_parser = {path="hid_report_descriptor_parser"}
+members = [
+  "hidparse",
+  "hidparser"
+]
+
+[workspace.dependencies]
+hidparser = {path="hidparser"}
 clap = { version = "4.3.21", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
