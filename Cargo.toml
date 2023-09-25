@@ -1,4 +1,13 @@
-[package]
-name = "hid_report_descriptor_parser"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+resolver = "2"
+
+members = [
+  "hidparse",
+  "hidparser"
+]
+
+[workspace.dependencies]
+hidparser = {path="hidparser"}
+clap = { version = "4.3.21", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

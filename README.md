@@ -35,7 +35,7 @@ path:
 
 3. Build and run unit tests with:
 
-   \>`cargo test`
+   \>`cargo test --all`
 
 4. Generate and open docs:
 
