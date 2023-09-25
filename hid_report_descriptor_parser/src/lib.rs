@@ -108,12 +108,12 @@ fn field_data(bits: &Range<u32>, buffer: &[u8]) -> Option<Vec<u8>> {
   if (bits.end / 8) as usize > buffer.len() {
     return None;
   }
-  let mut dst_vec = vec![0u8; (bits.len() - 1) / 8 + 1 as usize];
+  let mut dst_vec = vec![0u8; (bits.len() - 1) / 8 + 1_usize];
   for (dst_bit, src_bit) in bits.clone().enumerate() {
     let src_byte = buffer[(src_bit / 8) as usize];
     let src_bit_value = (src_byte >> (src_bit % 8)) & 0x01;
     let dst_byte_or_mask = src_bit_value << (dst_bit % 8);
-    dst_vec[(dst_bit / 8) as usize] = dst_vec[(dst_bit / 8) as usize] | dst_byte_or_mask;
+    dst_vec[dst_bit / 8] |= dst_byte_or_mask;
   }
 
   Some(dst_vec)
@@ -154,9 +154,9 @@ fn field_value(bits: &Range<u32>, min: LogicalMinimum, max: LogicalMaximum, buff
 fn field_range(min: LogicalMinimum, max: LogicalMaximum) -> Option<u32> {
   if i32::from(min).is_negative() {
     //logical minimum = negative means that the field is signed.
-    return i32::from(max).checked_sub(i32::from(min)).and_then(|f| if f > 0 { Some(f as u32) } else { None });
+    i32::from(max).checked_sub(i32::from(min)).and_then(|f| if f > 0 { Some(f as u32) } else { None })
   } else {
-    return u32::from(max).checked_sub(u32::from(min)).and_then(|f| if f > 0 { Some(f) } else { None });
+    u32::from(max).checked_sub(u32::from(min)).and_then(|f| if f > 0 { Some(f) } else { None })
   }
 }
 

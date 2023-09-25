@@ -142,7 +142,7 @@ fn main() {
           } else {
             print!("page: <unrecognized>")
           }
-          println!("")
+          println!()
         }
         ReportField::Array(a) => {
           if a.bits.len() == 1 {
@@ -151,7 +151,7 @@ fn main() {
             print!("\tbits: {:?}..{:?}", a.bits.start, a.bits.end - 1);
           }
           print!("\tusages: {:?})\t- ", a.usage_list);
-          println!("")
+          println!()
         }
         ReportField::Padding(p) => {
           if p.bits.len() == 1 {

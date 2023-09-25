@@ -36,7 +36,7 @@ pub struct DescriptorItemTokenizer<'a> {
 impl<'a> DescriptorItemTokenizer<'a> {
   /// Instantiates a new HID Report Descriptor Item Tokenizer.
   pub fn new(descriptor: &'a [u8]) -> Self {
-    DescriptorItemTokenizer { descriptor: descriptor, position: 0 }
+    DescriptorItemTokenizer { descriptor, position: 0 }
   }
 }
 

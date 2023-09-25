@@ -206,7 +206,7 @@ impl Usage {
     let mut usage = id.0;
     if let Some(page) = page {
       if usage & 0xFFFF0000 == 0 {
-        usage = usage | ((page.0 as u32) << 16);
+        usage |= (page.0 as u32) << 16;
       }
     }
     Usage(usage)

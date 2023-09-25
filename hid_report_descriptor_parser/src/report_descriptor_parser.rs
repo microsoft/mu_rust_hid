@@ -9,7 +9,7 @@
 //!
 //! SPDX-License-Identifier: BSD-2-Clause-Patent
 //!
-use alloc::{collections::BTreeMap, vec, vec::Vec};
+use alloc::{borrow::ToOwned, collections::BTreeMap, vec, vec::Vec};
 
 use crate::{
   item_tokenizer::{DescriptorItemTokenizer, ReportItem, ReportItemType},
@@ -81,13 +81,13 @@ impl ReportData {
     item_data: &[u8],
     global_state: &GlobalItemStateTable,
     local_state: &LocalItemStateTable,
-    active_collections: &Vec<ReportCollection>,
+    active_collections: &[ReportCollection],
   ) -> Self {
     ReportData {
       attributes: ReportAttributes::from(item_data),
       global_state: global_state.clone(),
       local_state: local_state.clone(),
-      member_of: active_collections.clone(),
+      member_of: active_collections.to_owned(),
     }
   }
 }
@@ -154,21 +154,16 @@ impl ReportDescriptorParser {
       }
       0b1010 => {
         //Collection
-        let usage_page = (*self).global_state[0].usage_page;
-        let usage_range = (*self).local_state.usages.get(0);
+        let usage_page = self.global_state[0].usage_page;
+        let usage_range = self.local_state.usages.get(0);
         let usage_range_start = match usage_range {
-          Some(&ref range) => range.start(),
+          Some(range) => range.start(),
           None => 0,
         };
         let usage = Usage::from_page_and_id(usage_page, Usage::from(usage_range_start));
-        let designator = self.local_state.designators.get(0).clone().map(|x| DesignatorIndex::from(x.start()));
-        let string = self.local_state.strings.get(0).clone().map(|x| StringIndex::from(x.start()));
-        let collection = ReportCollection {
-          usage: usage,
-          designator: designator,
-          string: string,
-          member_of: self.active_collections.clone(),
-        };
+        let designator = self.local_state.designators.get(0).map(|x| DesignatorIndex::from(x.start()));
+        let string = self.local_state.strings.get(0).map(|x| StringIndex::from(x.start()));
+        let collection = ReportCollection { usage, designator, string, member_of: self.active_collections.clone() };
         self.active_collections.push(collection);
       }
       0b1100 => {
@@ -312,7 +307,7 @@ impl ReportDescriptorParser {
         let report_count = data.global_state.report_count.ok_or(ReportDescriptorError::InvalidReportNoCount)?.into();
         let report_size: u32 = data.global_state.report_size.ok_or(ReportDescriptorError::InvalidReportNoSize)?.into();
 
-        if data.local_state.usages.len() == 0 {
+        if data.local_state.usages.is_empty() {
           //no usages defined - padding.
           let padding_size = report_count * report_size;
           let bits = bit_position..(bit_position + padding_size);
@@ -330,28 +325,19 @@ impl ReportDescriptorParser {
           if i32::from(logical_min) >= i32::from(logical_max) {
             Err(ReportDescriptorError::InvalidReportLogicalRange)?;
           }
-        } else {
-          if u32::from(logical_min) >= u32::from(logical_max) {
-            Err(ReportDescriptorError::InvalidReportLogicalRange)?;
-          }
+        } else if u32::from(logical_min) >= u32::from(logical_max) {
+          Err(ReportDescriptorError::InvalidReportLogicalRange)?;
         }
 
         if data.attributes.variable {
           // Process variable-type fields.
-          let mut usage_iterator =
-            data.local_state.usages.iter().map(|x| x.range()).flatten().map(|x| Usage::from(x)).peekable();
+          let mut usage_iterator = data.local_state.usages.iter().flat_map(|x| x.range()).map(Usage::from).peekable();
 
-          let mut designator_iterator = data
-            .local_state
-            .designators
-            .iter()
-            .map(|x| x.range())
-            .flatten()
-            .map(|x| DesignatorIndex::from(x))
-            .peekable();
+          let mut designator_iterator =
+            data.local_state.designators.iter().flat_map(|x| x.range()).map(DesignatorIndex::from).peekable();
 
           let mut string_iterator =
-            data.local_state.strings.iter().map(|x| x.range()).flatten().map(|x| StringIndex::from(x)).peekable();
+            data.local_state.strings.iter().flat_map(|x| x.range()).map(StringIndex::from).peekable();
 
           let mut usage = usage_iterator.next().ok_or(ReportDescriptorError::InvalidReportNoUsage)?;
           let mut designator = designator_iterator.next();
@@ -363,7 +349,7 @@ impl ReportDescriptorParser {
 
             let field = VariableField {
               attributes: data.attributes,
-              bits: bits,
+              bits,
               usage: Usage::from_page_and_id(data.global_state.usage_page, usage),
               logical_minimum: logical_min,
               logical_maximum: logical_max,
@@ -372,7 +358,7 @@ impl ReportDescriptorParser {
               unit_exponent: data.global_state.unit_exponent,
               unit: data.global_state.unit,
               designator_index: designator,
-              string_index: string_index,
+              string_index,
               member_of: data.member_of.clone(),
             };
             fields.push(ReportField::Variable(field));
@@ -410,8 +396,8 @@ impl ReportDescriptorParser {
 
             let field = ArrayField {
               attributes: data.attributes,
-              bits: bits,
-              usage_list: usage_list,
+              bits,
+              usage_list,
               logical_minimum: logical_min,
               logical_maximum: logical_max,
               designator_list: data.local_state.designators.clone(),
@@ -423,7 +409,7 @@ impl ReportDescriptorParser {
         }
       }
 
-      reports.push(Report { report_id: id.clone(), size_in_bits: bit_position as usize, fields: fields });
+      reports.push(Report { report_id: *id, size_in_bits: bit_position as usize, fields });
     }
 
     Ok(reports)
@@ -595,9 +581,7 @@ mod tests {
     assert_eq!(input_report.size_in_bits, 280);
 
     //Tip Switch
-    let ReportField::Variable(field) = &input_report.fields[0] else {
-      panic!("Incorrect Field type")
-    };
+    let ReportField::Variable(field) = &input_report.fields[0] else { panic!("Incorrect Field type") };
     assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
     assert_eq!(field.bits, 0..1);
     assert_eq!(field.usage, Usage::from(0x000d0042));
@@ -613,15 +597,11 @@ mod tests {
     assert_eq!(member_of.len(), 2);
     assert_eq!(member_of[0].usage, Usage::from(0x000d0004));
     assert_eq!(member_of[1].usage, Usage::from(0x000d0022));
-    let ReportField::Padding(field) = &input_report.fields[1] else {
-      panic!("Incorrect Field type")
-    };
+    let ReportField::Padding(field) = &input_report.fields[1] else { panic!("Incorrect Field type") };
     assert_eq!(field.bits, 1..8);
 
     //Contact Identifier
-    let ReportField::Variable(field) = &input_report.fields[2] else {
-      panic!("Incorrect Field type")
-    };
+    let ReportField::Variable(field) = &input_report.fields[2] else { panic!("Incorrect Field type") };
     assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
     assert_eq!(field.bits, 8..16);
     assert_eq!(field.usage, Usage::from(0x000d0051));
@@ -646,9 +626,7 @@ mod tests {
       (&input_report.fields[6], Usage::from(0x00010031), 64..80, PhysicalMaximum::from(906)),  //Y2
     ];
     for (field, usage, bits, phy_max) in x_y_reports {
-      let ReportField::Variable(field) = field else {
-        panic!("Incorrect Field type")
-      };
+      let ReportField::Variable(field) = field else { panic!("Incorrect Field type") };
       assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
       assert_eq!(field.bits, bits);
       assert_eq!(field.usage, usage);
@@ -672,9 +650,7 @@ mod tests {
       (&input_report.fields[8], Usage::from(0x000d0049), 96..112),
     ];
     for (field, usage, bits) in width_height_reports {
-      let ReportField::Variable(field) = field else {
-        panic!("Incorrect Field type")
-      };
+      let ReportField::Variable(field) = field else { panic!("Incorrect Field type") };
       assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
       assert_eq!(field.bits, bits);
       assert_eq!(field.usage, usage);
@@ -693,9 +669,7 @@ mod tests {
     }
 
     //Azimuth
-    let ReportField::Variable(field) = &input_report.fields[9] else {
-      panic!("Incorrect Field type")
-    };
+    let ReportField::Variable(field) = &input_report.fields[9] else { panic!("Incorrect Field type") };
     assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
     assert_eq!(field.bits, 112..128);
     assert_eq!(field.usage, Usage::from(0x000d003f));
@@ -713,9 +687,7 @@ mod tests {
     assert_eq!(member_of[1].usage, Usage::from(0x000d0022));
 
     //Tip Switch 2
-    let ReportField::Variable(field) = &input_report.fields[10] else {
-      panic!("Incorrect Field type")
-    };
+    let ReportField::Variable(field) = &input_report.fields[10] else { panic!("Incorrect Field type") };
     assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
     assert_eq!(field.bits, 128..129);
     assert_eq!(field.usage, Usage::from(0x000d0042));
@@ -731,15 +703,11 @@ mod tests {
     assert_eq!(member_of.len(), 2);
     assert_eq!(member_of[0].usage, Usage::from(0x000d0004));
     assert_eq!(member_of[1].usage, Usage::from(0x000d0022));
-    let ReportField::Padding(field) = &input_report.fields[11] else {
-      panic!("Incorrect Field type")
-    };
+    let ReportField::Padding(field) = &input_report.fields[11] else { panic!("Incorrect Field type") };
     assert_eq!(field.bits, 129..136);
 
     //Contact Identifier 2
-    let ReportField::Variable(field) = &input_report.fields[12] else {
-      panic!("Incorrect Field type")
-    };
+    let ReportField::Variable(field) = &input_report.fields[12] else { panic!("Incorrect Field type") };
     assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
     assert_eq!(field.bits, 136..144);
     assert_eq!(field.usage, Usage::from(0x000d0051));
@@ -764,9 +732,7 @@ mod tests {
       (&input_report.fields[16], Usage::from(0x00010031), 192..208, PhysicalMaximum::from(906)),  //Y2
     ];
     for (field, usage, bits, phy_max) in x_y_reports {
-      let ReportField::Variable(field) = field else {
-        panic!("Incorrect Field type")
-      };
+      let ReportField::Variable(field) = field else { panic!("Incorrect Field type") };
       assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
       assert_eq!(field.bits, bits);
       assert_eq!(field.usage, usage);
@@ -790,9 +756,7 @@ mod tests {
       (&input_report.fields[18], Usage::from(0x000d0049), 224..240),
     ];
     for (field, usage, bits) in width_height_reports {
-      let ReportField::Variable(field) = field else {
-        panic!("Incorrect Field type")
-      };
+      let ReportField::Variable(field) = field else { panic!("Incorrect Field type") };
       assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
       assert_eq!(field.bits, bits);
       assert_eq!(field.usage, usage);
@@ -811,9 +775,7 @@ mod tests {
     }
 
     //Azimuth 2
-    let ReportField::Variable(field) = &input_report.fields[19] else {
-      panic!("Incorrect Field type")
-    };
+    let ReportField::Variable(field) = &input_report.fields[19] else { panic!("Incorrect Field type") };
     assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
     assert_eq!(field.bits, 240..256);
     assert_eq!(field.usage, Usage::from(0x000d003f));
@@ -831,9 +793,7 @@ mod tests {
     assert_eq!(member_of[1].usage, Usage::from(0x000d0022));
 
     //Scan Time
-    let ReportField::Variable(field) = &input_report.fields[20] else {
-      panic!("Incorrect Field type")
-    };
+    let ReportField::Variable(field) = &input_report.fields[20] else { panic!("Incorrect Field type") };
     assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
     assert_eq!(field.bits, 256..272);
     assert_eq!(field.usage, Usage::from(0x000d0056));
@@ -850,9 +810,7 @@ mod tests {
     assert_eq!(member_of[0].usage, Usage::from(0x000d0004));
 
     //Contact Count
-    let ReportField::Variable(field) = &input_report.fields[21] else {
-      panic!("Incorrect Field type")
-    };
+    let ReportField::Variable(field) = &input_report.fields[21] else { panic!("Incorrect Field type") };
     assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
     assert_eq!(field.bits, 272..280);
     assert_eq!(field.usage, Usage::from(0x000d0054));
@@ -880,9 +838,7 @@ mod tests {
     let feature_report = &report_descriptor.features[0];
     assert_eq!(feature_report.fields.len(), 1);
 
-    let ReportField::Variable(field) = &feature_report.fields[0] else {
-      panic!("Incorrect Field type")
-    };
+    let ReportField::Variable(field) = &feature_report.fields[0] else { panic!("Incorrect Field type") };
     assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
     assert_eq!(field.bits, 0..8);
     assert_eq!(field.usage, Usage::from(0x000d0055));
@@ -904,9 +860,7 @@ mod tests {
 
     for (index, field) in feature_report.fields.iter().enumerate() {
       let index = index as u32;
-      let ReportField::Variable(field) = field else {
-        panic!("Incorrect Field type")
-      };
+      let ReportField::Variable(field) = field else { panic!("Incorrect Field type") };
       assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
       assert_eq!(field.bits, index * 8..(index + 1) * 8);
       assert_eq!(field.usage, Usage::from(0xff0000C5));
@@ -981,9 +935,7 @@ mod tests {
     assert_eq!(report.fields.len(), 1);
     assert_eq!(report.size_in_bits, 8);
 
-    let ReportField::Variable(field) = &report.fields[0] else {
-      panic!("Incorrect Field type")
-    };
+    let ReportField::Variable(field) = &report.fields[0] else { panic!("Incorrect Field type") };
     assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
     assert_eq!(field.bits, 0..8);
     assert_eq!(field.usage, Usage::from(0xFA000052));
@@ -1004,9 +956,7 @@ mod tests {
     ];
 
     for (field, bits, usage) in fields {
-      let ReportField::Variable(field) = field else {
-        panic!("Incorrect Field type")
-      };
+      let ReportField::Variable(field) = field else { panic!("Incorrect Field type") };
       assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
       assert_eq!(field.bits, bits);
       assert_eq!(field.usage, usage);
@@ -1028,9 +978,7 @@ mod tests {
     ];
 
     for (field, bits, usage) in fields {
-      let ReportField::Variable(field) = field else {
-        panic!("Incorrect Field type")
-      };
+      let ReportField::Variable(field) = field else { panic!("Incorrect Field type") };
       assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
       assert_eq!(field.bits, bits);
       assert_eq!(field.usage, usage);
@@ -1048,9 +996,7 @@ mod tests {
 
     for (index, field) in report.fields.iter().enumerate() {
       let index = index as u32;
-      let ReportField::Variable(field) = field else {
-        panic!("Incorrect Field type")
-      };
+      let ReportField::Variable(field) = field else { panic!("Incorrect Field type") };
       assert_eq!(field.attributes, ReportAttributes { variable: true, buffered_bytes: true, ..Default::default() });
       assert_eq!(field.bits, index * 8..(index + 1) * 8);
       assert_eq!(field.usage, Usage::from(0xFA000031));
@@ -1069,9 +1015,7 @@ mod tests {
     ];
 
     for (field, bits, usage) in fields {
-      let ReportField::Variable(field) = field else {
-        panic!("Incorrect Field type")
-      };
+      let ReportField::Variable(field) = field else { panic!("Incorrect Field type") };
       assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
       assert_eq!(field.bits, bits);
       assert_eq!(field.usage, usage);
@@ -1087,9 +1031,7 @@ mod tests {
 
     for (index, field) in report.fields.iter().enumerate() {
       let index = index as u32;
-      let ReportField::Variable(field) = field else {
-        panic!("Incorrect Field type")
-      };
+      let ReportField::Variable(field) = field else { panic!("Incorrect Field type") };
       assert_eq!(field.attributes, ReportAttributes { variable: true, buffered_bytes: true, ..Default::default() });
       assert_eq!(field.bits, index * 8..(index + 1) * 8);
       assert_eq!(field.usage, Usage::from(0xFA000042));
@@ -1146,9 +1088,7 @@ mod tests {
     // Modifier keys
     let mut bit: u32 = 0;
     for (field, usage) in report.fields[0..8].iter().zip(0xe0..0xe7) {
-      let ReportField::Variable(field) = field else {
-        panic!("Incorrect Field type")
-      };
+      let ReportField::Variable(field) = field else { panic!("Incorrect Field type") };
       assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
       assert_eq!(field.bits, bit..bit + 1);
       assert_eq!(field.usage, Usage::from_page_and_id(Some(UsagePage::from(0x07)), Usage::from(usage)));
@@ -1158,17 +1098,13 @@ mod tests {
     }
 
     // Reserved byte
-    let ReportField::Padding(field) = &report.fields[8] else {
-      panic!("Incorrect Field type")
-    };
+    let ReportField::Padding(field) = &report.fields[8] else { panic!("Incorrect Field type") };
     assert_eq!(field.bits, 8..16);
 
     // Keycode array
     bit = 16;
     for field in &report.fields[9..15] {
-      let ReportField::Array(field) = field else {
-        panic!("Incorrect Field type")
-      };
+      let ReportField::Array(field) = field else { panic!("Incorrect Field type") };
       assert_eq!(field.attributes, ReportAttributes { ..Default::default() });
       assert_eq!(field.bits, bit..bit + 8);
       assert_eq!(field.logical_minimum, LogicalMinimum::from(0));
@@ -1188,9 +1124,7 @@ mod tests {
     // LEDs
     bit = 0;
     for (field, usage) in report.fields[0..5].iter().zip(0x01..0x05) {
-      let ReportField::Variable(field) = field else {
-        panic!("Incorrect Field type")
-      };
+      let ReportField::Variable(field) = field else { panic!("Incorrect Field type") };
       assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
       assert_eq!(field.bits, bit..bit + 1);
       assert_eq!(field.usage, Usage::from_page_and_id(Some(UsagePage::from(0x08)), Usage::from(usage)));
