@@ -75,5 +75,5 @@ jobs:
         condition: eq(variables['Agent.OS'], 'Windows_NT')
       - template: Steps/UploadCodeCoverage.yml@mu_devops
         parameters:
-          report: $(Build.StagingDirectory)\cobertura.xml
+          report_dir: $(Build.StagingDirectory)
           codecov_token: ${{ variables.CODECOV_TOKEN }}
