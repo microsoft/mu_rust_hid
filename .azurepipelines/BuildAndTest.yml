@@ -15,9 +15,9 @@ resources:
   repositories:
     - repository: mu_devops
       type: github
-      endpoint: javagedes
-      name: javagedes/mu_devops
-      ref: codecov-io
+      endpoint: microsoft
+      name: microsoft/mu_devops
+      ref: personal/joeyvagedes/codecov-io
 
 parameters:
   - name: matrix
