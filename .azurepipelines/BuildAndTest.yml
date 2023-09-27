@@ -64,7 +64,16 @@ jobs:
         parameters:
           test_command: "cargo tarpaulin --all --out xml --output-dir $(Build.StagingDirectory)"
           build_command: "cargo build"
+      - task: PowerShell@2
+        inputs:
+          targetType: 'inline'
+          script: |
+            # List the contents of the folder
+            Get-ChildItem -Path "(Build.StagingDirectory)" | ForEach-Object {
+                Write-Host $_.Name
+            }
+        condition: eq(variables['Agent.OS'], 'Windows_NT')
       - template: Steps/UploadCodeCoverage.yml@mu_devops
         parameters:
-          report: $(Build.StagingDirectory)/cobertura.xml
+          report: $(Build.StagingDirectory)\cobertura.xml
           codecov_token: ${{ variables.CODECOV_TOKEN }}
