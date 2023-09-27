@@ -67,4 +67,4 @@ jobs:
       - template: Steps/UploadCodeCoverage.yml@mu_devops
         parameters:
           report: $(Build.StagingDirectory)/cobertura.xml
-          codecov_token: "UNKNOWN"
+          codecov_token: "UNKNOW2"
