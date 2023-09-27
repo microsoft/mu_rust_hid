@@ -19,6 +19,9 @@ resources:
       name: microsoft/mu_devops
       ref: personal/joeyvagedes/codecov-io
 
+variables:
+  CodeCovToken: $(CODECOV_TOKEN)
+
 parameters:
   - name: matrix
     type: object
@@ -67,4 +70,4 @@ jobs:
       - template: Steps/UploadCodeCoverage.yml@mu_devops
         parameters:
           report: $(Build.StagingDirectory)/cobertura.xml
-          codecov_token: ${{CODECOV_TOKEN}}
+          codecov_token: $(CodeCovToken)
