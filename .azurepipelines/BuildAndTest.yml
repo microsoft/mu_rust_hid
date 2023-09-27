@@ -69,7 +69,7 @@ jobs:
           targetType: 'inline'
           script: |
             # List the contents of the folder
-            Get-ChildItem -Path "(Build.StagingDirectory)" | ForEach-Object {
+            Get-ChildItem -Path "$(Build.StagingDirectory)" | ForEach-Object {
                 Write-Host $_.Name
             }
         condition: eq(variables['Agent.OS'], 'Windows_NT')
