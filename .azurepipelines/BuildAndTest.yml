@@ -15,9 +15,9 @@ resources:
   repositories:
     - repository: mu_devops
       type: github
-      endpoint: microsoft
-      name: microsoft/mu_devops
-      ref: main
+      endpoint: javagedes
+      name: javagedes/mu_devops
+      ref: codecov-io
 
 parameters:
   - name: matrix
@@ -62,5 +62,9 @@ jobs:
       - template: Steps/RustSetupSteps.yml@mu_devops
       - template: Steps/RustCargoSteps.yml@mu_devops
         parameters:
-          test_command: "cargo test --all"
+          test_command: "cargo tarpaulin --all --out xml --output-dir $(Build.StagingDirectory)"
           build_command: "cargo build"
+      - template: Steps/UploadCodeCoverage.yml@mu_devops
+        parameters:
+          report: $(Build.StagingDirectory)/cobertura.xml
+          codecov_token: "UNKNOWN"
