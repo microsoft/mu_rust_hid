@@ -1,5 +1,5 @@
 ## @file
-# Azure Pipeline build file to build and test code in this repository.
+# Azure Pipeline build file to build and test code in this repository
 #
 # Copyright (c) Microsoft Corporation.
 # SPDX-License-Identifier: BSD-2-Clause-Patent
