@@ -68,4 +68,4 @@ jobs:
         parameters:
           report_dir: $(Build.StagingDirectory)
           codecov_token: ${{ variables.CODECOV_TOKEN }}
-          install_dependencies: false
+          install_dependencies: true
