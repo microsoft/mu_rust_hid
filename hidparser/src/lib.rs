@@ -128,6 +128,7 @@ fn field_data(bits: &Range<u32>, buffer: &[u8]) -> Result<Vec<u8>, FieldAccessEr
   Ok(dst_vec)
 }
 
+// helper routine to write the data bytes into the bits in the given buffer.
 fn set_field_data(bits: &Range<u32>, data: &[u8], buffer: &mut [u8]) -> Result<(), FieldAccessError> {
   if (bits.end.div_ceil(8)) as usize > buffer.len() {
     return Err(FieldAccessError::InvalidBufferSize);
@@ -181,7 +182,7 @@ fn field_value(
   }
 }
 
-// helper routine to set the data into the given
+// helper routine to write the data value into the the bits in the given buffer.
 fn set_field_value(
   bits: &Range<u32>,
   min: LogicalMinimum,
