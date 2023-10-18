@@ -103,12 +103,21 @@ use report_data_types::{
 };
 use utils::u32_from_bytes;
 
+/// Describes errors encountered when using field accessor methods.
+#[derive(Debug, PartialEq, Eq)]
+pub enum FieldAccessError {
+  /// The buffer passed to a field accessor method was an invalid size
+  InvalidBufferSize,
+  /// The value passed to or retrieved from a field accessor method was an invalid value
+  InvalidFieldValue,
+}
+
 // helper routine to extract data from report buffers as byte array.
-fn field_data(bits: &Range<u32>, buffer: &[u8]) -> Option<Vec<u8>> {
-  if (bits.end / 8) as usize > buffer.len() {
-    return None;
+fn field_data(bits: &Range<u32>, buffer: &[u8]) -> Result<Vec<u8>, FieldAccessError> {
+  if (bits.end.div_ceil(8)) as usize > buffer.len() {
+    return Err(FieldAccessError::InvalidBufferSize);
   }
-  let mut dst_vec = vec![0u8; (bits.len() - 1) / 8 + 1_usize];
+  let mut dst_vec = vec![0u8; (bits.len()).div_ceil(8)];
   for (dst_bit, src_bit) in bits.clone().enumerate() {
     let src_byte = buffer[(src_bit / 8) as usize];
     let src_bit_value = (src_byte >> (src_bit % 8)) & 0x01;
@@ -116,11 +125,34 @@ fn field_data(bits: &Range<u32>, buffer: &[u8]) -> Option<Vec<u8>> {
     dst_vec[dst_bit / 8] |= dst_byte_or_mask;
   }
 
-  Some(dst_vec)
+  Ok(dst_vec)
+}
+
+// helper routine to write the data bytes into the bits in the given buffer.
+fn set_field_data(bits: &Range<u32>, data: &[u8], buffer: &mut [u8]) -> Result<(), FieldAccessError> {
+  if (bits.end.div_ceil(8)) as usize > buffer.len() {
+    return Err(FieldAccessError::InvalidBufferSize);
+  }
+
+  for (src_bit, dst_bit) in bits.clone().enumerate() {
+    let src_byte = data[src_bit / 8];
+    let src_bit_value = (src_byte >> (src_bit % 8)) & 0x01;
+    let dst_byte_and_mask = !(1u8 << (dst_bit % 8));
+    let dst_byte_or_mask = src_bit_value << (dst_bit % 8);
+    buffer[(dst_bit / 8) as usize] &= dst_byte_and_mask;
+    buffer[(dst_bit / 8) as usize] |= dst_byte_or_mask;
+  }
+
+  Ok(())
 }
 
 // helper routine to extract data from report buffer as i64
-fn field_value(bits: &Range<u32>, min: LogicalMinimum, max: LogicalMaximum, buffer: &[u8]) -> Option<i64> {
+fn field_value(
+  bits: &Range<u32>,
+  min: LogicalMinimum,
+  max: LogicalMaximum,
+  buffer: &[u8],
+) -> Result<i64, FieldAccessError> {
   let mut field_data = field_data(bits, buffer)?;
   let mut raw_value_bytes = [0u8; 8];
   if i32::from(min).is_negative() {
@@ -144,10 +176,24 @@ fn field_value(bits: &Range<u32>, min: LogicalMinimum, max: LogicalMaximum, buff
   let value = i64::from_le_bytes(raw_value_bytes);
 
   if (value < i32::from(min) as i64) || (value > i32::from(max) as i64) {
-    None
+    Err(FieldAccessError::InvalidFieldValue)
   } else {
-    Some(i64::from_le_bytes(raw_value_bytes))
+    Ok(i64::from_le_bytes(raw_value_bytes))
   }
+}
+
+// helper routine to write the data value into the the bits in the given buffer.
+fn set_field_value(
+  bits: &Range<u32>,
+  min: LogicalMinimum,
+  max: LogicalMaximum,
+  data: i64,
+  buffer: &mut [u8],
+) -> Result<(), FieldAccessError> {
+  if (data < i32::from(min) as i64) || (data > i32::from(max) as i64) {
+    return Err(FieldAccessError::InvalidFieldValue);
+  }
+  set_field_data(bits, &data.to_le_bytes()[0..4], buffer)
 }
 
 // helper routine to return the logical range for a field as u32
@@ -205,12 +251,22 @@ pub struct VariableField {
 impl VariableField {
   /// returns the data for this field from the given report buffer
   pub fn field_data(&self, buffer: &[u8]) -> Option<Vec<u8>> {
-    field_data(&self.bits, buffer)
+    field_data(&self.bits, buffer).ok()
+  }
+
+  /// sets the data for this field from the given data buffer
+  pub fn set_field_data(&self, data: &[u8], buffer: &mut [u8]) -> Result<(), FieldAccessError> {
+    set_field_data(&self.bits, data, buffer)
   }
 
   /// returns the field data as an i64 value.
   pub fn field_value(&self, buffer: &[u8]) -> Option<i64> {
-    field_value(&self.bits, self.logical_minimum, self.logical_maximum, buffer)
+    field_value(&self.bits, self.logical_minimum, self.logical_maximum, buffer).ok()
+  }
+
+  /// sets the data in this field to the given i64 value.
+  pub fn set_field_value(&self, data: i64, buffer: &mut [u8]) -> Result<(), FieldAccessError> {
+    set_field_value(&self.bits, self.logical_minimum, self.logical_maximum, data, buffer)
   }
 
   /// returns the logical ranges of the field.
@@ -243,12 +299,12 @@ pub struct ArrayField {
 impl ArrayField {
   /// returns the data for this field from the given report buffer
   pub fn field_data(&self, buffer: &[u8]) -> Option<Vec<u8>> {
-    field_data(&self.bits, buffer)
+    field_data(&self.bits, buffer).ok()
   }
 
   /// returns the field data as an i64 value.
   pub fn field_value(&self, buffer: &[u8]) -> Option<i64> {
-    field_value(&self.bits, self.logical_minimum, self.logical_maximum, buffer)
+    field_value(&self.bits, self.logical_minimum, self.logical_maximum, buffer).ok()
   }
 
   /// returns the logical ranges of the field.
@@ -304,7 +360,7 @@ mod tests {
 
   use crate::{
     report_data_types::{LogicalMaximum, LogicalMinimum},
-    ArrayField, VariableField,
+    ArrayField, FieldAccessError, VariableField,
   };
   use alloc::vec;
 
@@ -321,6 +377,9 @@ mod tests {
 
     field.bits = 3..9;
     assert_eq!(field.field_data(&buffer), Some(vec![0x15]));
+
+    field.bits = 0..9;
+    assert_eq!(field.field_data(&buffer), Some(vec![0xaa, 0x00]));
 
     field.bits = 7..21;
     assert_eq!(field.field_data(&buffer), Some(vec![0x55, 0x15]));
@@ -346,6 +405,27 @@ mod tests {
 
     field.bits = 100..257;
     assert_eq!(field.field_data(&buffer), None);
+  }
+
+  #[test]
+  fn set_field_data_should_set_field_data() {
+    let mut field: VariableField = Default::default();
+    let mut buffer: [u8; 10] = [0x00; 10];
+
+    field.bits = 0..8;
+    field.set_field_data(&[0xaa], &mut buffer).unwrap();
+    assert_eq!(buffer[0], 0xaa);
+    assert_eq!(buffer[1..], [0x0u8; 9]);
+
+    let mut buffer: [u8; 10] = [0x00; 10];
+    field.bits = 4..12;
+    field.set_field_data(&[0xaa], &mut buffer).unwrap();
+    assert_eq!(buffer[0..2], [0xa0, 0x0a]);
+    assert_eq!(buffer[2..], [0x0u8; 8]);
+
+    let mut buffer: [u8; 1] = [0x00; 1];
+    field.bits = 4..12;
+    assert_eq!(field.set_field_data(&[0xaa], &mut buffer), Err(FieldAccessError::InvalidBufferSize));
   }
 
   #[test]
@@ -451,6 +531,31 @@ mod tests {
 
     let buffer = (-1025i16).to_le_bytes();
     assert_eq!(field.field_value(&buffer), None);
+  }
+
+  #[test]
+  fn set_field_value_should_set_field_data() {
+    let mut field: VariableField = Default::default();
+    field.logical_minimum = LogicalMinimum::from(0i32);
+    field.logical_maximum = LogicalMaximum::from(0xffi32);
+    let mut buffer: [u8; 10] = [0x00; 10];
+
+    field.bits = 0..8;
+    field.set_field_value(0xaai64, &mut buffer).unwrap();
+    assert_eq!(buffer[0], 0xaa);
+    assert_eq!(buffer[1..], [0x0u8; 9]);
+
+    let mut buffer: [u8; 10] = [0x00; 10];
+    field.bits = 4..12;
+    field.set_field_value(0xaai64, &mut buffer).unwrap();
+    assert_eq!(buffer[0..2], [0xa0, 0x0a]);
+    assert_eq!(buffer[2..], [0x0u8; 8]);
+
+    let mut buffer: [u8; 1] = [0x00; 1];
+    field.bits = 4..12;
+    assert_eq!(field.set_field_value(0xaa, &mut buffer), Err(FieldAccessError::InvalidBufferSize));
+
+    assert_eq!(field.set_field_value(0xaaa, &mut buffer), Err(FieldAccessError::InvalidFieldValue));
   }
 
   #[test]
