@@ -553,9 +553,9 @@ mod tests {
 
     let mut buffer: [u8; 1] = [0x00; 1];
     field.bits = 4..12;
-    assert_eq!(field.set_field_value(0xaai64, &mut buffer), Err(FieldAccessError::InvalidBufferSize));
+    assert_eq!(field.set_field_value(0xaa, &mut buffer), Err(FieldAccessError::InvalidBufferSize));
 
-    assert_eq!(field.set_field_value(0xaaai64, &mut buffer), Err(FieldAccessError::InvalidFieldValue));
+    assert_eq!(field.set_field_value(0xaaa, &mut buffer), Err(FieldAccessError::InvalidFieldValue));
   }
 
   #[test]
