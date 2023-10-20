@@ -155,6 +155,7 @@ fn field_value(
 ) -> Result<i64, FieldAccessError> {
   let mut field_data = field_data(bits, buffer)?;
   let mut raw_value_bytes = [0u8; 8];
+  let adjusted_max: i64;
   if i32::from(min).is_negative() {
     //logical minimum = negative means that the field is signed (HID 1.1 section 6.2.2.7).
     //determine whether sign-extension is required.
@@ -169,13 +170,18 @@ fn field_value(
       }
       raw_value_bytes.fill(0xff);
     }
+    //if min is negative, then max is i32
+    adjusted_max = i32::from(max) as i64;
+  } else {
+    //if min is zero or positive, then max is u32
+    adjusted_max = u32::from(max) as i64;
   }
 
   raw_value_bytes[..field_data.len()].copy_from_slice(field_data.as_slice());
 
   let value = i64::from_le_bytes(raw_value_bytes);
 
-  if (value < i32::from(min) as i64) || (value > i32::from(max) as i64) {
+  if (value < i32::from(min) as i64) || (value > adjusted_max) {
     Err(FieldAccessError::InvalidFieldValue)
   } else {
     Ok(i64::from_le_bytes(raw_value_bytes))
@@ -481,6 +487,11 @@ mod tests {
     let buffer = (-1025i16).to_le_bytes();
     assert_eq!(field.field_value(&buffer), None);
 
+    field.logical_minimum = LogicalMinimum::from(0);
+    field.logical_maximum = LogicalMaximum::from(u32::MAX);
+    let buffer = (1025i16).to_le_bytes();
+    assert_eq!(field.field_value(&buffer), Some(1025));
+
     let mut field: ArrayField = Default::default();
 
     field.logical_minimum = LogicalMinimum::from(-127i32);
@@ -531,6 +542,11 @@ mod tests {
 
     let buffer = (-1025i16).to_le_bytes();
     assert_eq!(field.field_value(&buffer), None);
+
+    field.logical_minimum = LogicalMinimum::from(0);
+    field.logical_maximum = LogicalMaximum::from(u32::MAX);
+    let buffer = (1025i16).to_le_bytes();
+    assert_eq!(field.field_value(&buffer), Some(1025));
   }
 
   #[test]
