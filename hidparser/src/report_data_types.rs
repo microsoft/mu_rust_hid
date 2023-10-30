@@ -271,7 +271,7 @@ impl From<u32> for DesignatorIndex {
 }
 
 /// Represents a range of indices in the Physical descriptor.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DesignatorRange(RangeInclusive<u32>);
 impl DesignatorRange {
   pub fn start(&self) -> u32 {
@@ -297,7 +297,7 @@ impl From<u32> for StringIndex {
 }
 
 /// Represents an range of indices in the String descriptor.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StringRange(RangeInclusive<u32>);
 impl StringRange {
   pub fn start(&self) -> u32 {

@@ -207,7 +207,7 @@ fn field_range(min: LogicalMinimum, max: LogicalMaximum) -> Option<u32> {
 }
 
 /// Describes a report collection.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReportCollection {
   /// The usage associated with the collection.
   pub usage: Usage,
@@ -220,7 +220,7 @@ pub struct ReportCollection {
 }
 
 /// Describes a Variable data field in a report descriptor.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct VariableField {
   /// The bit range that the variable data field occupies in the report.
   pub bits: Range<u32>,
@@ -276,7 +276,7 @@ impl VariableField {
 }
 
 /// Describes an Array data field in a report descriptor.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ArrayField {
   /// The bit range that the array data field occupies in the report.
   pub bits: Range<u32>,
@@ -314,14 +314,14 @@ impl ArrayField {
 }
 
 /// Describes a Padding data field in a report descriptor (i.e. a field without usages).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PaddingField {
   /// The bit range that the padding data field occupies in the report.
   pub bits: Range<u32>,
 }
 
 /// Defines the types of fields that appear in a report.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReportField {
   Variable(VariableField),
   Array(ArrayField),
@@ -329,7 +329,7 @@ pub enum ReportField {
 }
 
 /// Describes a report.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Report {
   /// The (optional) report id associated with the report.
   pub report_id: Option<ReportId>,
@@ -340,6 +340,7 @@ pub struct Report {
 }
 
 /// A collection of input/output/feature reports that are described by a given Report Descriptor.
+#[derive(Debug, PartialEq, Eq)]
 pub struct ReportDescriptor {
   /// The list of input reports from this report descriptor.
   pub input_reports: Vec<Report>,

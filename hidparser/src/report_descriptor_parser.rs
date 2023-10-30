@@ -1391,4 +1391,12 @@ mod tests {
       Some(ReportDescriptorError::InvalidReportLogicalRange)
     );
   }
+
+  #[test]
+  fn report_descriptors_parsed_from_same_buffer_should_be_equal() {
+    assert_eq!(
+      ReportDescriptorParser::parse(MINIMAL_BOOT_KEYBOARD_REPORT_DESCRIPTOR),
+      ReportDescriptorParser::parse(MINIMAL_BOOT_KEYBOARD_REPORT_DESCRIPTOR)
+    );
+  }
 }
