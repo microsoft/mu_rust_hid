@@ -29,6 +29,9 @@ parameters:
       Windows:
         ImageName: windows-latest
 
+variables:
+- group: coverage
+
 jobs:
   - ${{ each item in parameters.matrix }}:
     - job: BuildAndTest_${{ item.Key }}
@@ -64,8 +67,22 @@ jobs:
         parameters:
           test_command: "cargo tarpaulin --all --out xml --output-dir $(Build.StagingDirectory)"
           build_command: "cargo build"
+      - task: PythonScript@0
+        displayName: Rename coverage file
+        env:
+          OUTPUT_DIR: $(Build.StagingDirectory)
+        inputs:
+          scriptSource: inline
+          script: |
+            import os
+            import pathlib
+
+            OUTPUT_DIR = os.environ['OUTPUT_DIR']
+            original = pathlib.Path(OUTPUT_DIR, 'cobertura.xml')
+            new = pathlib.Path(OUTPUT_DIR, 'coverage.xml')
+            original.replace(new)
+
       - template: Steps/UploadCodeCoverage.yml@mu_devops
         parameters:
           report_dir: $(Build.StagingDirectory)
-          codecov_token: ${{ variables.CODECOV_TOKEN }}
           install_dependencies: false
