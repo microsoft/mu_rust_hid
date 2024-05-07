@@ -9,7 +9,8 @@
 //!
 //! SPDX-License-Identifier: BSD-2-Clause-Patent
 //!
-use alloc::{borrow::ToOwned, collections::BTreeMap, vec, vec::Vec};
+
+use alloc::{collections::BTreeMap, vec, vec::Vec};
 
 use crate::{
   item_tokenizer::{DescriptorItemTokenizer, ReportItem, ReportItemType},
@@ -20,7 +21,7 @@ use crate::{
 };
 
 /// Defines errors generated during report descriptor parsing.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ReportDescriptorError {
   InvalidMainItem,
   InvalidGlobalItem,
@@ -79,15 +80,15 @@ struct ReportData {
 impl ReportData {
   fn new(
     item_data: &[u8],
-    global_state: &GlobalItemStateTable,
-    local_state: &LocalItemStateTable,
-    active_collections: &[ReportCollection],
+    global_state: GlobalItemStateTable,
+    local_state: LocalItemStateTable,
+    active_collections: Vec<ReportCollection>,
   ) -> Self {
     ReportData {
       attributes: ReportAttributes::from(item_data),
-      global_state: global_state.clone(),
-      local_state: local_state.clone(),
-      member_of: active_collections.to_owned(),
+      global_state: global_state,
+      local_state: local_state,
+      member_of: active_collections,
     }
   }
 }
@@ -126,7 +127,12 @@ impl ReportDescriptorParser {
           Some(vec) => vec,
           None => Vec::new(),
         };
-        input_vec.push(ReportData::new(item.data, &self.global_state[0], &self.local_state, &self.active_collections));
+        input_vec.push(ReportData::new(
+          item.data,
+          self.global_state[0].clone(),
+          self.local_state.clone(),
+          self.active_collections.clone(),
+        ));
         self.input_reports.insert(report_id, input_vec);
       }
       0b1001 => {
@@ -135,7 +141,12 @@ impl ReportDescriptorParser {
           Some(vec) => vec,
           None => Vec::new(),
         };
-        output_vec.push(ReportData::new(item.data, &self.global_state[0], &self.local_state, &self.active_collections));
+        output_vec.push(ReportData::new(
+          item.data,
+          self.global_state[0].clone(),
+          self.local_state.clone(),
+          self.active_collections.clone(),
+        ));
         self.output_reports.insert(report_id, output_vec);
       }
       0b1011 => {
@@ -146,9 +157,9 @@ impl ReportDescriptorParser {
         };
         feature_vec.push(ReportData::new(
           item.data,
-          &self.global_state[0],
-          &self.local_state,
-          &self.active_collections,
+          self.global_state[0].clone(),
+          self.local_state.clone(),
+          self.active_collections.clone(),
         ));
         self.features.insert(report_id, feature_vec);
       }
