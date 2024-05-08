@@ -55,7 +55,7 @@ impl<'a> Iterator for DescriptorItemTokenizer<'a> {
     let mut tag = (item_header & 0xF0) >> 4;
 
     if size == 3 {
-      //short item size of 4 bytes is encoded as "3"
+      // short item size of 4 bytes is encoded as "3"
       size = 4;
     }
 

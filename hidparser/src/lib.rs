@@ -104,7 +104,7 @@ use report_data_types::{
 use utils::u32_from_bytes;
 
 /// Describes errors encountered when using field accessor methods.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum FieldAccessError {
   /// The buffer passed to a field accessor method was an invalid size
   InvalidBufferSize,
@@ -117,6 +117,7 @@ fn field_data(bits: &Range<u32>, buffer: &[u8]) -> Result<Vec<u8>, FieldAccessEr
   if (bits.end.div_ceil(8)) as usize > buffer.len() {
     return Err(FieldAccessError::InvalidBufferSize);
   }
+
   let mut dst_vec = vec![0u8; (bits.len()).div_ceil(8)];
   for (dst_bit, src_bit) in bits.clone().enumerate() {
     let src_byte = buffer[(src_bit / 8) as usize];
@@ -154,7 +155,7 @@ fn field_value(
   buffer: &[u8],
 ) -> Result<i64, FieldAccessError> {
   let mut field_data = field_data(bits, buffer)?;
-  let mut raw_value_bytes = [0u8; 8];
+  let mut raw_value_bytes = [0_u8; 8];
   let adjusted_max: i64;
   if i32::from(min).is_negative() {
     //logical minimum = negative means that the field is signed (HID 1.1 section 6.2.2.7).
