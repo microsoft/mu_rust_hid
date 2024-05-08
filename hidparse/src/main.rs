@@ -121,7 +121,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ReportField::Variable(v) => {
           match v.bits.len() {
             1 => print!("\tbit: {}", v.bits.start),
-            _ => print!("\tbits: {}..={}", v.bits.start, v.bits.end - 1), // add an = to be like rust slice convention
+            _ => print!("\tbits: {}..={}", v.bits.start, v.bits.end - 1),
           };
           print!("\tusage: ({:?}:{:?})\t- ", v.usage.page(), v.usage.id());
           let usage_page = ut.UsagePages.iter().find(|x| x.id == v.usage.page());
@@ -141,14 +141,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         ReportField::Array(a) => {
           let bits = match a.bits.len() {
             1 => format!("bit: {}", a.bits.start),
-            _ => format!("bits: {}..={}", a.bits.start, a.bits.end - 1), // add an = to be like rust slice convention
+            _ => format!("bits: {}..={}", a.bits.start, a.bits.end - 1),
           };
           println!("\t{bits}\tusages: {:?} \t-", a.usage_list)
         }
         ReportField::Padding(p) => {
           let bits = match p.bits.len() {
             1 => format!("bit: {}", p.bits.start),
-            _ => format!("bits: {}..={}", p.bits.start, p.bits.end - 1), // add an = to be like rust slice convention
+            _ => format!("bits: {}..={}", p.bits.start, p.bits.end - 1),
           };
           println!("\t{bits}\tpadding");
         }
