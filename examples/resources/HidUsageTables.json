@@ -1,8 +1,8 @@
 {
   "UsageTableVersion": 1,
-  "UsageTableRevision": 4,
+  "UsageTableRevision": 5,
   "UsageTableSubRevisionInternal": 0,
-  "LastGenerated": "2023-01-05T18:12:54.5267751-08:00",
+  "LastGenerated": "2024-01-08T15:33:15.3528199-08:00",
   "UsagePages": [
     {
       "Kind": "Defined",
@@ -13936,7 +13936,7 @@
         },
         {
           "Id": 179,
-          "Name": "Personal Activity: Pedometer",
+          "Name": "Personal Activity: Floor Tracker",
           "Kinds": [
             "CA",
             "CP"
@@ -13944,6 +13944,14 @@
         },
         {
           "Id": 180,
+          "Name": "Personal Activity: Pedometer",
+          "Kinds": [
+            "CA",
+            "CP"
+          ]
+        },
+        {
+          "Id": 181,
           "Name": "Personal Activity: Step Detection",
           "Kinds": [
             "CA",
@@ -15280,6 +15288,48 @@
           ]
         },
         {
+          "Id": 1214,
+          "Name": "Data Field: Human Head Azimuth",
+          "Kinds": [
+            "SV"
+          ]
+        },
+        {
+          "Id": 1215,
+          "Name": "Data Field: Human Head Altitude",
+          "Kinds": [
+            "SV"
+          ]
+        },
+        {
+          "Id": 1216,
+          "Name": "Data Field: Human Head Roll",
+          "Kinds": [
+            "SV"
+          ]
+        },
+        {
+          "Id": 1217,
+          "Name": "Data Field: Human Head Pitch",
+          "Kinds": [
+            "SV"
+          ]
+        },
+        {
+          "Id": 1218,
+          "Name": "Data Field: Human Head Yaw",
+          "Kinds": [
+            "SV"
+          ]
+        },
+        {
+          "Id": 1219,
+          "Name": "Data Field: Human Correlation Id",
+          "Kinds": [
+            "SV"
+          ]
+        },
+        {
           "Id": 1232,
           "Name": "Data Field: Light",
           "Kinds": [
@@ -16563,6 +16613,13 @@
           ]
         },
         {
+          "Id": 2118,
+          "Name": "Reporting State: Anytime",
+          "Kinds": [
+            "Sel"
+          ]
+        },
+        {
           "Id": 2128,
           "Name": "Power State: Undefined",
           "Kinds": [
@@ -17726,14 +17783,14 @@
         },
         {
           "Id": 2449,
-          "Name": "Step Type: Running",
+          "Name": "Step Type: Walking",
           "Kinds": [
             "Sel"
           ]
         },
         {
           "Id": 2450,
-          "Name": "Step Type: Walking",
+          "Name": "Step Type: Running",
           "Kinds": [
             "Sel"
           ]

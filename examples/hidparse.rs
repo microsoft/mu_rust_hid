@@ -6,15 +6,11 @@
 //!
 //! # Usage
 //!
-//! `hidparse.exe --path .\samples\boot_keyboard.bin`
-//!
-//! or
-//!
-//! `cargo run -- --path .\samples\boot_keyboard.bin`
+//! `cargo run --example hidparse -- --path .\examples\samples\boot_keyboard.bin`
 //!
 //! ## License
 //!
-//! Copyright (C) Microsoft Corporation. All rights reserved.
+//! Copyright (c) Microsoft Corporation. All rights reserved.
 //!
 //! SPDX-License-Identifier: BSD-2-Clause-Patent
 //!
@@ -41,7 +37,7 @@ enum ReportType {
 
 /// Simple command line utility that supports parsing descriptors and printing the results.
 ///
-/// Copyright (C) Microsoft Corporation. All rights reserved.
+/// Copyright (c) Microsoft Corporation. All rights reserved.
 ///
 /// SPDX-License-Identifier: BSD-2-Clause-Patent
 #[derive(Parser, Debug)]
@@ -79,24 +75,25 @@ struct UsagePage {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "PascalCase")]
 struct HidUsageTable {
-  UsageTableVersion: u8,
-  UsageTableRevision: u8,
-  UsageTableSubRevisionInternal: u8,
-  LastGenerated: String,
-  UsagePages: Vec<UsagePage>,
+  usage_table_version: u8,
+  usage_table_revision: u8,
+  usage_table_sub_revision_internal: u8,
+  last_generated: String,
+  usage_pages: Vec<UsagePage>,
 }
 
 fn usage_tables() -> Result<HidUsageTable, Box<dyn Error>> {
-  let file = File::open([env!("CARGO_MANIFEST_DIR"), "resources", "HidUsageTables.json"].iter().collect::<PathBuf>())?;
+  let file = File::open(
+    [env!("CARGO_MANIFEST_DIR"), "examples", "resources", "HidUsageTables.json"].iter().collect::<PathBuf>(),
+  )?;
   let us = serde_json::from_reader(BufReader::new(file))?;
   Ok(us)
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
   let args = Arguments::parse();
-
   let raw_descriptor = fs::read(args.path)?;
 
   let ReportDescriptor { input_reports, output_reports, features } =
@@ -124,7 +121,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             _ => print!("\tbits: {}..={}", v.bits.start, v.bits.end - 1),
           };
           print!("\tusage: ({:?}:{:?})\t- ", v.usage.page(), v.usage.id());
-          let usage_page = ut.UsagePages.iter().find(|x| x.id == v.usage.page());
+          let usage_page = ut.usage_pages.iter().find(|x| x.id == v.usage.page());
           if let Some(page) = usage_page {
             print!(" page: {:?} ", page.name);
             let usage = page.usage_ids.iter().find(|x| x.id == v.usage.id());
