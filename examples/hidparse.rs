@@ -75,13 +75,13 @@ struct UsagePage {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "PascalCase")]
 struct HidUsageTable {
-  UsageTableVersion: u8,
-  UsageTableRevision: u8,
-  UsageTableSubRevisionInternal: u8,
-  LastGenerated: String,
-  UsagePages: Vec<UsagePage>,
+  usage_table_version: u8,
+  usage_table_revision: u8,
+  usage_table_sub_revision_internal: u8,
+  last_generated: String,
+  usage_pages: Vec<UsagePage>,
 }
 
 fn usage_tables() -> Result<HidUsageTable, Box<dyn Error>> {
@@ -121,7 +121,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             _ => print!("\tbits: {}..={}", v.bits.start, v.bits.end - 1),
           };
           print!("\tusage: ({:?}:{:?})\t- ", v.usage.page(), v.usage.id());
-          let usage_page = ut.UsagePages.iter().find(|x| x.id == v.usage.page());
+          let usage_page = ut.usage_pages.iter().find(|x| x.id == v.usage.page());
           if let Some(page) = usage_page {
             print!(" page: {:?} ", page.name);
             let usage = page.usage_ids.iter().find(|x| x.id == v.usage.id());
