@@ -6,15 +6,11 @@
 //!
 //! # Usage
 //!
-//! `hidparse.exe --path .\samples\boot_keyboard.bin`
-//!
-//! or
-//!
-//! `cargo run -- --path .\samples\boot_keyboard.bin`
+//! `cargo run --example hidparse -- --path .\examples\samples\boot_keyboard.bin`
 //!
 //! ## License
 //!
-//! Copyright (C) Microsoft Corporation. All rights reserved.
+//! Copyright (c) Microsoft Corporation. All rights reserved.
 //!
 //! SPDX-License-Identifier: BSD-2-Clause-Patent
 //!
@@ -41,7 +37,7 @@ enum ReportType {
 
 /// Simple command line utility that supports parsing descriptors and printing the results.
 ///
-/// Copyright (C) Microsoft Corporation. All rights reserved.
+/// Copyright (c) Microsoft Corporation. All rights reserved.
 ///
 /// SPDX-License-Identifier: BSD-2-Clause-Patent
 #[derive(Parser, Debug)]
@@ -89,14 +85,15 @@ struct HidUsageTable {
 }
 
 fn usage_tables() -> Result<HidUsageTable, Box<dyn Error>> {
-  let file = File::open([env!("CARGO_MANIFEST_DIR"), "resources", "HidUsageTables.json"].iter().collect::<PathBuf>())?;
+  let file = File::open(
+    [env!("CARGO_MANIFEST_DIR"), "examples", "resources", "HidUsageTables.json"].iter().collect::<PathBuf>(),
+  )?;
   let us = serde_json::from_reader(BufReader::new(file))?;
   Ok(us)
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
   let args = Arguments::parse();
-
   let raw_descriptor = fs::read(args.path)?;
 
   let ReportDescriptor { input_reports, output_reports, features } =
