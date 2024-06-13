@@ -96,8 +96,29 @@ fn main() -> Result<(), Box<dyn Error>> {
   let args = Arguments::parse();
   let raw_descriptor = fs::read(args.path)?;
 
-  let ReportDescriptor { input_reports, output_reports, features } =
+  let ReportDescriptor { input_reports, bad_input_reports, output_reports, bad_output_reports, features, bad_features } =
     parse_report_descriptor(&raw_descriptor).map_err(|_| "Failed to parse descriptor.")?;
+
+  if !bad_input_reports.is_empty() {
+    println!("Bad input reports:");
+    for bad_report in bad_input_reports {
+      println!("{:x?}", bad_report);
+    }
+  }
+
+  if !bad_output_reports.is_empty() {
+    println!("Bad output reports:");
+    for bad_report in bad_output_reports {
+      println!("{:x?}", bad_report);
+    }
+  }
+
+  if !bad_features.is_empty() {
+    println!("Bad feature reports:");
+    for bad_report in bad_features {
+      println!("{:x?}", bad_report);
+    }
+  }
 
   let reports = (iter::repeat(ReportType::Input).zip(input_reports))
     .chain(iter::repeat(ReportType::Output).zip(output_reports))

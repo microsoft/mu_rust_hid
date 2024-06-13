@@ -303,20 +303,36 @@ impl ReportDescriptorParser {
     }
   }
 
-  // Collate disparate ReportData elements into full Report objects. This is invoked after parsing is completed to assemble
-  // the collected ReportData elements into full reports keyed to report ids.
+  // Collate disparate ReportData elements into full Report objects. This is invoked after parsing is completed to
+  // assemble the collected ReportData elements into full reports keyed to report ids. The first element of the returned
+  // tuple contains successfully parsed reports. If there were any errors (e.g. missing required data) when parsing
+  // reports, the list of affected report ids and the corresponding errors is returned in the second element of the
+  // tuple.
   fn process_reports(
     &self,
     report_records: &BTreeMap<Option<ReportId>, Vec<ReportData>>,
-  ) -> Result<Vec<Report>, ReportDescriptorError> {
+  ) -> (Vec<Report>, Vec<(Option<ReportId>, ReportDescriptorError)>) {
     let mut reports = Vec::new();
+    let mut bad_reports = Vec::new();
 
     for (id, report_data) in report_records {
       let mut fields = Vec::new();
       let mut bit_position: u32 = 0;
       for data in report_data {
-        let report_count = data.global_state.report_count.ok_or(ReportDescriptorError::InvalidReportNoCount)?.into();
-        let report_size: u32 = data.global_state.report_size.ok_or(ReportDescriptorError::InvalidReportNoSize)?.into();
+        let report_count: u32 = match data.global_state.report_count {
+          Some(count) => count.into(),
+          None => {
+            bad_reports.push((id.clone(), ReportDescriptorError::InvalidReportNoCount));
+            break;
+          }
+        };
+        let report_size: u32 = match data.global_state.report_size {
+          Some(size) => size.into(),
+          None => {
+            bad_reports.push((id.clone(), ReportDescriptorError::InvalidReportNoSize));
+            break;
+          }
+        };
 
         if data.local_state.usages.is_empty() {
           //no usages defined - padding.
@@ -328,16 +344,30 @@ impl ReportDescriptorParser {
         }
 
         // validate state
-        let logical_min = data.global_state.logical_minimum.ok_or(ReportDescriptorError::InvalidReportNoLogicalMin)?;
-        let logical_max = data.global_state.logical_maximum.ok_or(ReportDescriptorError::InvalidReportNoLogicalMax)?;
+        let logical_min = match data.global_state.logical_minimum {
+          Some(min) => min,
+          None => {
+            bad_reports.push((id.clone(), ReportDescriptorError::InvalidReportNoLogicalMin));
+            break;
+          }
+        };
+        let logical_max = match data.global_state.logical_maximum {
+          Some(max) => max,
+          None => {
+            bad_reports.push((id.clone(), ReportDescriptorError::InvalidReportNoLogicalMax));
+            break;
+          }
+        };
 
         // if logical_min is negative, then logical max is signed (i32), otherwise it is unsigned (u32).
         if i32::from(logical_min).is_negative() {
           if i32::from(logical_min) >= i32::from(logical_max) {
-            Err(ReportDescriptorError::InvalidReportLogicalRange)?;
+            bad_reports.push((id.clone(), ReportDescriptorError::InvalidReportLogicalRange));
+            break;
           }
         } else if u32::from(logical_min) >= u32::from(logical_max) {
-          Err(ReportDescriptorError::InvalidReportLogicalRange)?;
+          bad_reports.push((id.clone(), ReportDescriptorError::InvalidReportLogicalRange));
+          break;
         }
 
         if data.attributes.variable {
@@ -350,7 +380,14 @@ impl ReportDescriptorParser {
           let mut string_iterator =
             data.local_state.strings.iter().flat_map(|x| x.range()).map(StringIndex::from).peekable();
 
-          let mut usage = usage_iterator.next().ok_or(ReportDescriptorError::InvalidReportNoUsage)?;
+          let mut usage = match usage_iterator.next() {
+            Some(usage) => usage,
+            None => {
+              bad_reports.push((id.clone(), ReportDescriptorError::InvalidReportNoUsage));
+              break;
+            }
+          };
+
           let mut designator = designator_iterator.next();
           let mut string_index = string_iterator.next();
 
@@ -423,7 +460,7 @@ impl ReportDescriptorParser {
       reports.push(Report { report_id: *id, size_in_bits: bit_position as usize, fields });
     }
 
-    Ok(reports)
+    (reports, bad_reports)
   }
 
   /// Parses the given report_descriptor byte slice and produces a ReportDescriptor structure that describes the reports
@@ -434,10 +471,18 @@ impl ReportDescriptorParser {
     for item in item_tokenizer {
       parser.parse_item(item)?;
     }
+
+    let (input_reports, bad_input_reports) = parser.process_reports(&parser.input_reports);
+    let (output_reports, bad_output_reports) = parser.process_reports(&parser.output_reports);
+    let (features, bad_features) = parser.process_reports(&parser.features);
+
     Ok(ReportDescriptor {
-      input_reports: parser.process_reports(&parser.input_reports)?,
-      output_reports: parser.process_reports(&parser.output_reports)?,
-      features: parser.process_reports(&parser.features)?,
+      input_reports,
+      bad_input_reports,
+      output_reports,
+      bad_output_reports,
+      features,
+      bad_features,
     })
   }
 }
@@ -452,7 +497,7 @@ mod tests {
       Usage, UsagePage, UsageRange,
     },
     report_descriptor_parser::ReportDescriptorError,
-    ReportField,
+    ReportDescriptor, ReportField,
   };
 
   use super::ReportDescriptorParser;
@@ -1372,35 +1417,41 @@ mod tests {
       Some(ReportDescriptorError::DelimiterNotSupported,)
     );
 
-    assert_eq!(
-      ReportDescriptorParser::parse(BOGUS_BOOT_KEYBOARD_REPORT_DESCRIPTOR_NO_REPORT_SIZE).err(),
-      Some(ReportDescriptorError::InvalidReportNoSize)
-    );
+    let ReportDescriptor { mut bad_input_reports, .. } =
+      ReportDescriptorParser::parse(BOGUS_BOOT_KEYBOARD_REPORT_DESCRIPTOR_NO_REPORT_SIZE).unwrap();
+    let (report_id, error) = bad_input_reports.pop().unwrap();
+    assert_eq!(None, report_id);
+    assert_eq!(ReportDescriptorError::InvalidReportNoSize, error);
 
-    assert_eq!(
-      ReportDescriptorParser::parse(BOGUS_BOOT_KEYBOARD_REPORT_DESCRIPTOR_NO_REPORT_COUNT).err(),
-      Some(ReportDescriptorError::InvalidReportNoCount)
-    );
+    let ReportDescriptor { mut bad_input_reports, .. } =
+      ReportDescriptorParser::parse(BOGUS_BOOT_KEYBOARD_REPORT_DESCRIPTOR_NO_REPORT_COUNT).unwrap();
+    let (report_id, error) = bad_input_reports.pop().unwrap();
+    assert_eq!(None, report_id);
+    assert_eq!(ReportDescriptorError::InvalidReportNoCount, error);
 
-    assert_eq!(
-      ReportDescriptorParser::parse(BOGUS_MINIMAL_BOOT_KEYBOARD_REPORT_DESCRIPTOR_NO_LOG_MIN).err(),
-      Some(ReportDescriptorError::InvalidReportNoLogicalMin)
-    );
+    let ReportDescriptor { mut bad_input_reports, .. } =
+      ReportDescriptorParser::parse(BOGUS_MINIMAL_BOOT_KEYBOARD_REPORT_DESCRIPTOR_NO_LOG_MIN).unwrap();
+    let (report_id, error) = bad_input_reports.pop().unwrap();
+    assert_eq!(None, report_id);
+    assert_eq!(ReportDescriptorError::InvalidReportNoLogicalMin, error);
 
-    assert_eq!(
-      ReportDescriptorParser::parse(BOGUS_MINIMAL_BOOT_KEYBOARD_REPORT_DESCRIPTOR_NO_LOG_MAX).err(),
-      Some(ReportDescriptorError::InvalidReportNoLogicalMax)
-    );
+    let ReportDescriptor { mut bad_input_reports, .. } =
+      ReportDescriptorParser::parse(BOGUS_MINIMAL_BOOT_KEYBOARD_REPORT_DESCRIPTOR_NO_LOG_MAX).unwrap();
+    let (report_id, error) = bad_input_reports.pop().unwrap();
+    assert_eq!(None, report_id);
+    assert_eq!(ReportDescriptorError::InvalidReportNoLogicalMax, error);
 
-    assert_eq!(
-      ReportDescriptorParser::parse(MINIMAL_BOOT_KEYBOARD_REPORT_DESCRIPTOR_INVALID_LOG_RANGE).err(),
-      Some(ReportDescriptorError::InvalidReportLogicalRange)
-    );
+    let ReportDescriptor { mut bad_input_reports, .. } =
+      ReportDescriptorParser::parse(MINIMAL_BOOT_KEYBOARD_REPORT_DESCRIPTOR_INVALID_LOG_RANGE).unwrap();
+    let (report_id, error) = bad_input_reports.pop().unwrap();
+    assert_eq!(None, report_id);
+    assert_eq!(ReportDescriptorError::InvalidReportLogicalRange, error);
 
-    assert_eq!(
-      ReportDescriptorParser::parse(MINIMAL_BOOT_KEYBOARD_REPORT_DESCRIPTOR_INVALID_LOG_RANGE2).err(),
-      Some(ReportDescriptorError::InvalidReportLogicalRange)
-    );
+    let ReportDescriptor { mut bad_input_reports, .. } =
+      ReportDescriptorParser::parse(MINIMAL_BOOT_KEYBOARD_REPORT_DESCRIPTOR_INVALID_LOG_RANGE2).unwrap();
+    let (report_id, error) = bad_input_reports.pop().unwrap();
+    assert_eq!(None, report_id);
+    assert_eq!(ReportDescriptorError::InvalidReportLogicalRange, error);
   }
 
   #[test]
