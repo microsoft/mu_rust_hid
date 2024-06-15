@@ -351,10 +351,16 @@ pub struct Report {
 pub struct ReportDescriptor {
   /// The list of input reports from this report descriptor.
   pub input_reports: Vec<Report>,
+  /// The list of input reports (if any) that failed to parse.
+  pub bad_input_reports: Vec<(Option<ReportId>, ReportDescriptorError)>,
   /// The list of output reports from this report descriptor.
   pub output_reports: Vec<Report>,
+  /// The list of output reports (if any) that failed to parse.
+  pub bad_output_reports: Vec<(Option<ReportId>, ReportDescriptorError)>,
   /// The list of feature reports from this report descriptor.
   pub features: Vec<Report>,
+  /// The list of feature reports (if any) that failed to parse.
+  pub bad_features: Vec<(Option<ReportId>, ReportDescriptorError)>,
 }
 
 /// Parse the raw report descriptor in the given byte slice.
