@@ -25,7 +25,7 @@ parameters:
     default:
       Linux:
         ImageName: ubuntu-latest
-        ContainerImage: ghcr.io/microsoft/mu_devops/ubuntu-22-build:latest
+        ContainerImage: ghcr.io/microsoft/mu_devops/ubuntu-24-build:latest
       Windows:
         ImageName: windows-latest
 
