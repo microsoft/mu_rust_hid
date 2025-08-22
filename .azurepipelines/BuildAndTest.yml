@@ -17,7 +17,7 @@ resources:
       type: github
       endpoint: microsoft
       name: microsoft/mu_devops
-      ref: main
+      ref: rust_updates_471
 
 parameters:
   - name: matrix
