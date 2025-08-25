@@ -444,11 +444,12 @@ mod tests {
 
     #[test]
     fn field_value_should_return_field_value() {
-        let mut field: VariableField = Default::default();
-
-        field.logical_minimum = LogicalMinimum::from(-127i32);
-        field.logical_maximum = LogicalMaximum::from(127i32);
-        field.bits = 0..8;
+        let mut field = VariableField {
+            logical_minimum: LogicalMinimum::from(-127_i32),
+            logical_maximum: LogicalMaximum::from(127_i32),
+            bits: 0..8,
+            ..Default::default()
+        };
 
         let buffer = (-1i8).to_le_bytes();
         assert_eq!(field.field_value(&buffer), Some(-1i64));
@@ -500,11 +501,12 @@ mod tests {
         let buffer = (1025i16).to_le_bytes();
         assert_eq!(field.field_value(&buffer), Some(1025));
 
-        let mut field: ArrayField = Default::default();
-
-        field.logical_minimum = LogicalMinimum::from(-127i32);
-        field.logical_maximum = LogicalMaximum::from(127i32);
-        field.bits = 0..8;
+        let mut field = VariableField {
+            logical_minimum: LogicalMinimum::from(-127_i32),
+            logical_maximum: LogicalMaximum::from(127_i32),
+            bits: 0..8,
+            ..Default::default()
+        };
 
         let buffer = (-1i8).to_le_bytes();
         assert_eq!(field.field_value(&buffer), Some(-1i64));
@@ -559,9 +561,12 @@ mod tests {
 
     #[test]
     fn set_field_value_should_set_field_data() {
-        let mut field: VariableField = Default::default();
-        field.logical_minimum = LogicalMinimum::from(0i32);
-        field.logical_maximum = LogicalMaximum::from(0xffi32);
+        let mut field = VariableField {
+            logical_minimum: LogicalMinimum::from(0i32),
+            logical_maximum: LogicalMaximum::from(0xffi32),
+            ..Default::default()
+        };
+
         let mut buffer: [u8; 10] = [0x00; 10];
 
         field.bits = 0..8;
@@ -584,10 +589,11 @@ mod tests {
 
     #[test]
     fn field_range_should_return_field_range() {
-        let mut field: VariableField = Default::default();
-
-        field.logical_minimum = LogicalMinimum::from(-127i32);
-        field.logical_maximum = LogicalMaximum::from(127i32);
+        let mut field = VariableField {
+            logical_minimum: LogicalMinimum::from(-127i32),
+            logical_maximum: LogicalMaximum::from(127i32),
+            ..Default::default()
+        };
 
         assert_eq!(field.field_range(), Some(254u32));
 
@@ -632,10 +638,11 @@ mod tests {
 
         assert_eq!(field.field_range(), Some(i32::MAX as u32));
 
-        let mut field: ArrayField = Default::default();
-
-        field.logical_minimum = LogicalMinimum::from(-127i32);
-        field.logical_maximum = LogicalMaximum::from(127i32);
+        let mut field = ArrayField {
+            logical_minimum: LogicalMinimum::from(-127i32),
+            logical_maximum: LogicalMaximum::from(127i32),
+            ..Default::default()
+        };
 
         assert_eq!(field.field_range(), Some(254u32));
 

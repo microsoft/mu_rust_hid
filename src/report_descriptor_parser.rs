@@ -86,8 +86,8 @@ impl ReportData {
     ) -> Self {
         ReportData {
             attributes: ReportAttributes::from(item_data),
-            global_state: global_state,
-            local_state: local_state,
+            global_state,
+            local_state,
             member_of: active_collections,
         }
     }
@@ -123,10 +123,7 @@ impl ReportDescriptorParser {
         match item.tag {
             0b1000 => {
                 //Input
-                let mut input_vec = match self.input_reports.remove(&report_id) {
-                    Some(vec) => vec,
-                    None => Vec::new(),
-                };
+                let mut input_vec = self.input_reports.remove(&report_id).unwrap_or_default();
                 input_vec.push(ReportData::new(
                     item.data,
                     self.global_state[0].clone(),
@@ -137,10 +134,7 @@ impl ReportDescriptorParser {
             }
             0b1001 => {
                 //Output
-                let mut output_vec = match self.output_reports.remove(&report_id) {
-                    Some(vec) => vec,
-                    None => Vec::new(),
-                };
+                let mut output_vec = self.output_reports.remove(&report_id).unwrap_or_default();
                 output_vec.push(ReportData::new(
                     item.data,
                     self.global_state[0].clone(),
@@ -151,10 +145,7 @@ impl ReportDescriptorParser {
             }
             0b1011 => {
                 //Feature
-                let mut feature_vec = match self.features.remove(&report_id) {
-                    Some(vec) => vec,
-                    None => Vec::new(),
-                };
+                let mut feature_vec = self.features.remove(&report_id).unwrap_or_default();
                 feature_vec.push(ReportData::new(
                     item.data,
                     self.global_state[0].clone(),
@@ -166,14 +157,14 @@ impl ReportDescriptorParser {
             0b1010 => {
                 //Collection
                 let usage_page = self.global_state[0].usage_page;
-                let usage_range = self.local_state.usages.get(0);
+                let usage_range = self.local_state.usages.first();
                 let usage_range_start = match usage_range {
                     Some(range) => range.start(),
                     None => 0,
                 };
                 let usage = Usage::from_page_and_id(usage_page, Usage::from(usage_range_start));
-                let designator = self.local_state.designators.get(0).map(|x| DesignatorIndex::from(x.start()));
-                let string = self.local_state.strings.get(0).map(|x| StringIndex::from(x.start()));
+                let designator = self.local_state.designators.first().map(|x| DesignatorIndex::from(x.start()));
+                let string = self.local_state.strings.first().map(|x| StringIndex::from(x.start()));
                 let collection =
                     ReportCollection { usage, designator, string, member_of: self.active_collections.clone() };
                 self.active_collections.push(collection);
@@ -323,14 +314,14 @@ impl ReportDescriptorParser {
                 let report_count: u32 = match data.global_state.report_count {
                     Some(count) => count.into(),
                     None => {
-                        bad_reports.push((id.clone(), ReportDescriptorError::InvalidReportNoCount));
+                        bad_reports.push((*id, ReportDescriptorError::InvalidReportNoCount));
                         break;
                     }
                 };
                 let report_size: u32 = match data.global_state.report_size {
                     Some(size) => size.into(),
                     None => {
-                        bad_reports.push((id.clone(), ReportDescriptorError::InvalidReportNoSize));
+                        bad_reports.push((*id, ReportDescriptorError::InvalidReportNoSize));
                         break;
                     }
                 };
@@ -348,14 +339,14 @@ impl ReportDescriptorParser {
                 let logical_min = match data.global_state.logical_minimum {
                     Some(min) => min,
                     None => {
-                        bad_reports.push((id.clone(), ReportDescriptorError::InvalidReportNoLogicalMin));
+                        bad_reports.push((*id, ReportDescriptorError::InvalidReportNoLogicalMin));
                         break;
                     }
                 };
                 let logical_max = match data.global_state.logical_maximum {
                     Some(max) => max,
                     None => {
-                        bad_reports.push((id.clone(), ReportDescriptorError::InvalidReportNoLogicalMax));
+                        bad_reports.push((*id, ReportDescriptorError::InvalidReportNoLogicalMax));
                         break;
                     }
                 };
@@ -363,11 +354,11 @@ impl ReportDescriptorParser {
                 // if logical_min is negative, then logical max is signed (i32), otherwise it is unsigned (u32).
                 if i32::from(logical_min).is_negative() {
                     if i32::from(logical_min) >= i32::from(logical_max) {
-                        bad_reports.push((id.clone(), ReportDescriptorError::InvalidReportLogicalRange));
+                        bad_reports.push((*id, ReportDescriptorError::InvalidReportLogicalRange));
                         break;
                     }
                 } else if u32::from(logical_min) >= u32::from(logical_max) {
-                    bad_reports.push((id.clone(), ReportDescriptorError::InvalidReportLogicalRange));
+                    bad_reports.push((*id, ReportDescriptorError::InvalidReportLogicalRange));
                     break;
                 }
 
@@ -390,7 +381,7 @@ impl ReportDescriptorParser {
                     let mut usage = match usage_iterator.next() {
                         Some(usage) => usage,
                         None => {
-                            bad_reports.push((id.clone(), ReportDescriptorError::InvalidReportNoUsage));
+                            bad_reports.push((*id, ReportDescriptorError::InvalidReportNoUsage));
                             break;
                         }
                     };
@@ -926,7 +917,7 @@ mod tests {
             let ReportField::Variable(field) = field else { panic!("Incorrect Field type") };
             assert_eq!(field.attributes, ReportAttributes { variable: true, ..Default::default() });
             assert_eq!(field.bits, index * 8..(index + 1) * 8);
-            assert_eq!(field.usage, Usage::from(0xff0000C5));
+            assert_eq!(field.usage, Usage::from(0xff0000c5));
             assert_eq!(field.logical_minimum, LogicalMinimum::from(0));
             assert_eq!(field.logical_maximum, LogicalMaximum::from(255));
             assert_eq!(field.physical_minimum, Some(PhysicalMinimum::from(0)));

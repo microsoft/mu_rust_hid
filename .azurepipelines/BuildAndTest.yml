@@ -17,7 +17,7 @@ resources:
       type: github
       endpoint: microsoft
       name: microsoft/mu_devops
-      ref: main
+      ref: refs/tags/v16.0.0
 
 parameters:
   - name: matrix
@@ -64,13 +64,10 @@ jobs:
             spell_check_parameters: "-c cspell.json **/*.md **/*.py **/*.rs"
       - template: Steps/RustSetupSteps.yml@mu_devops
       - template: Steps/RustCargoSteps.yml@mu_devops
-        parameters:
-          test_command: "cargo tarpaulin --all --out xml --output-dir $(Build.StagingDirectory)"
-          build_command: "cargo build"
       - task: PythonScript@0
         displayName: Rename coverage file
         env:
-          OUTPUT_DIR: $(Build.StagingDirectory)
+          OUTPUT_DIR: $(Build.SourcesDirectory)/target
         inputs:
           scriptSource: inline
           script: |
