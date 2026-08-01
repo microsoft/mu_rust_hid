@@ -183,7 +183,12 @@ impl ReportDescriptorParser {
     // handles parsing for "global" items
     fn parse_global(&mut self, item: ReportItem) -> Result<(), ReportDescriptorError> {
         match item.tag {
-            0b0000 => self.global_state[0].usage_page = Some(UsagePage::from(item.data)),
+            0b0000 => {
+                if item.data.len() > 2 {
+                    return Err(ReportDescriptorError::InvalidGlobalItem);
+                }
+                self.global_state[0].usage_page = Some(UsagePage::from(item.data));
+            }
             0b0001 => self.global_state[0].logical_minimum = Some(LogicalMinimum::from(item.data)),
             0b0010 => self.global_state[0].logical_maximum = Some(LogicalMaximum::from(item.data)),
             0b0011 => self.global_state[0].physical_minimum = Some(PhysicalMinimum::from(item.data)),
@@ -409,8 +414,8 @@ impl ReportDescriptorParser {
                         };
                         fields.push(ReportField::Variable(field));
 
-                        if usage_iterator.peek().is_some() {
-                            usage = usage_iterator.next().unwrap();
+                        if let Some(next_usage) = usage_iterator.next() {
+                            usage = next_usage;
                         }
                         if designator_iterator.peek().is_some() {
                             designator = designator_iterator.next();
@@ -467,6 +472,12 @@ impl ReportDescriptorParser {
         let item_tokenizer = DescriptorItemTokenizer::new(report_descriptor);
         let mut parser = Self::new();
         for item in item_tokenizer {
+            let item = item.map_err(|error| match error.item_type {
+                ReportItemType::Main => ReportDescriptorError::InvalidMainItem,
+                ReportItemType::Global => ReportDescriptorError::InvalidGlobalItem,
+                ReportItemType::Local => ReportDescriptorError::InvalidLocalItem,
+                ReportItemType::Reserved => ReportDescriptorError::ReservedItemNotSupported,
+            })?;
             parser.parse_item(item)?;
         }
 
@@ -1420,6 +1431,18 @@ mod tests {
             ReportDescriptorParser::parse(BOGUS_BOOT_KEYBOARD_REPORT_DESCRIPTOR_DELIMITER).err(),
             Some(ReportDescriptorError::DelimiterNotSupported,)
         );
+
+        for (descriptor, error) in [
+            (&[0x02, 0x01][..], ReportDescriptorError::InvalidMainItem),
+            (&[0x06, 0x01][..], ReportDescriptorError::InvalidGlobalItem),
+            (&[0x0a, 0x01][..], ReportDescriptorError::InvalidLocalItem),
+            (&[0xfe][..], ReportDescriptorError::ReservedItemNotSupported),
+            (&[0xfe, 0x01][..], ReportDescriptorError::ReservedItemNotSupported),
+            (&[0xfe, 0x01, 0x00][..], ReportDescriptorError::ReservedItemNotSupported),
+            (&[0x07, 0x00, 0x00, 0x00, 0x00][..], ReportDescriptorError::InvalidGlobalItem),
+        ] {
+            assert_eq!(ReportDescriptorParser::parse(descriptor).unwrap_err(), error);
+        }
 
         let ReportDescriptor { mut bad_input_reports, .. } =
             ReportDescriptorParser::parse(BOGUS_BOOT_KEYBOARD_REPORT_DESCRIPTOR_NO_REPORT_SIZE).unwrap();

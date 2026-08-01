@@ -32,7 +32,7 @@ pub fn i32_from_bytes(bytes: &[u8]) -> i32 {
     }
     let mut i32_bytes = [0_u8; 4];
     //sign-extend
-    if (bytes.last().unwrap() & 0x80) != 0 {
+    if bytes.last().is_some_and(|byte| byte & 0x80 != 0) {
         i32_bytes.fill(0xff);
     }
     i32_bytes[..bytes.len()].clone_from_slice(bytes);

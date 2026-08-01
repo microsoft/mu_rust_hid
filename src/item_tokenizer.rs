@@ -27,30 +27,35 @@ pub struct ReportItem<'a> {
     pub data: &'a [u8],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DescriptorItemTokenizerError {
+    pub(crate) item_type: ReportItemType,
+}
+
 /// Item tokenizer - produces an iterator over a byte slice that returns ReportItems.
-pub struct DescriptorItemTokenizer<'a> {
+pub(crate) struct DescriptorItemTokenizer<'a> {
     descriptor: &'a [u8],
     position: usize,
 }
 
 impl<'a> DescriptorItemTokenizer<'a> {
     /// Instantiates a new HID Report Descriptor Item Tokenizer.
-    pub fn new(descriptor: &'a [u8]) -> Self {
+    pub(crate) fn new(descriptor: &'a [u8]) -> Self {
         DescriptorItemTokenizer { descriptor, position: 0 }
     }
 }
 
 impl<'a> Iterator for DescriptorItemTokenizer<'a> {
-    type Item = ReportItem<'a>;
+    type Item = Result<ReportItem<'a>, DescriptorItemTokenizerError>;
     fn next(&mut self) -> Option<Self::Item> {
-        let item_header = self.descriptor.get(self.position)?;
+        let item_header = *self.descriptor.get(self.position)?;
         let mut size = item_header & 0x3;
         let item_type = match (item_header & 0xC) >> 2 {
             0 => ReportItemType::Main,
             1 => ReportItemType::Global,
             2 => ReportItemType::Local,
             3 => ReportItemType::Reserved,
-            _ => unreachable!(),
+            _ => ReportItemType::Reserved,
         };
         let mut tag = (item_header & 0xF0) >> 4;
 
@@ -63,17 +68,42 @@ impl<'a> Iterator for DescriptorItemTokenizer<'a> {
 
         if (size == 2) && (tag == 0xF) && (item_type) == ReportItemType::Reserved {
             // long item type
-            size = *self.descriptor.get(self.position)?;
+            size = match self.descriptor.get(self.position) {
+                Some(size) => *size,
+                None => {
+                    self.position = self.descriptor.len();
+                    return Some(Err(DescriptorItemTokenizerError { item_type }));
+                }
+            };
             self.position += 1;
-            tag = *self.descriptor.get(self.position)?;
+            tag = match self.descriptor.get(self.position) {
+                Some(tag) => *tag,
+                None => {
+                    self.position = self.descriptor.len();
+                    return Some(Err(DescriptorItemTokenizerError { item_type }));
+                }
+            };
             self.position += 1;
         }
 
-        let data = self.descriptor.get(self.position..self.position + size as usize)?;
+        let data_end = match self.position.checked_add(size as usize) {
+            Some(data_end) => data_end,
+            None => {
+                self.position = self.descriptor.len();
+                return Some(Err(DescriptorItemTokenizerError { item_type }));
+            }
+        };
+        let data = match self.descriptor.get(self.position..data_end) {
+            Some(data) => data,
+            None => {
+                self.position = self.descriptor.len();
+                return Some(Err(DescriptorItemTokenizerError { item_type }));
+            }
+        };
 
-        self.position += size as usize;
+        self.position = data_end;
 
-        Some(ReportItem { item_type, tag, data })
+        Some(Ok(ReportItem { item_type, tag, data }))
     }
 }
 
@@ -198,12 +228,28 @@ mod tests {
     fn item_tokenizer_should_tokenize_items() {
         let tokenizer = DescriptorItemTokenizer::new(TEST_REPORT_DESCRIPTOR);
 
-        let items: Vec<_> = tokenizer.collect();
+        let items: Result<Vec<_>, _> = tokenizer.collect();
+        let items = items.unwrap();
 
         assert_eq!(items.len(), EXPECTED_ITEMS.len(), "tokenizer did not produce the correct number of items");
 
         for (index, (item, expected_item)) in items.iter().zip(EXPECTED_ITEMS.iter()).enumerate() {
             assert_eq!(item, expected_item, "invalid tokenization of item at index {index:?}");
+        }
+    }
+
+    #[test]
+    fn item_tokenizer_should_reject_truncated_items() {
+        for (descriptor, item_type) in [
+            (&[0x02, 0x01][..], ReportItemType::Main),
+            (&[0x06, 0x01][..], ReportItemType::Global),
+            (&[0x0a, 0x01][..], ReportItemType::Local),
+            (&[0xfe][..], ReportItemType::Reserved),
+            (&[0xfe, 0x01][..], ReportItemType::Reserved),
+            (&[0xfe, 0x01, 0x00][..], ReportItemType::Reserved),
+        ] {
+            let error = DescriptorItemTokenizer::new(descriptor).next().unwrap().unwrap_err();
+            assert_eq!(error.item_type, item_type);
         }
     }
 }
