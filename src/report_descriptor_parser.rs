@@ -35,6 +35,7 @@ pub enum ReportDescriptorError {
     InvalidReportNoLogicalMin,
     InvalidReportNoLogicalMax,
     InvalidReportLogicalRange,
+    InvalidReportSizeOverflow,
 }
 
 // Tracks Global State as parsing proceeds.
@@ -330,6 +331,18 @@ impl ReportDescriptorParser {
                         break;
                     }
                 };
+
+                let total_bits = match report_count.checked_mul(report_size) {
+                    Some(total_bits) => total_bits,
+                    None => {
+                        bad_reports.push((*id, ReportDescriptorError::InvalidReportSizeOverflow));
+                        break;
+                    }
+                };
+                if bit_position.checked_add(total_bits).is_none() {
+                    bad_reports.push((*id, ReportDescriptorError::InvalidReportSizeOverflow));
+                    break;
+                }
 
                 if data.local_state.usages.is_empty() {
                     //no usages defined - padding.
@@ -1340,6 +1353,16 @@ mod tests {
         0xc0, // END_COLLECTION
     ];
 
+    static BOGUS_BOOT_KEYBOARD_REPORT_DESCRIPTOR_REPORT_SIZE_COUNT_OVERFLOW: &[u8] = &[
+        0x05, 0x01, // USAGE_PAGE (Generic Desktop)
+        0x09, 0x06, // USAGE (Keyboard)
+        0xa1, 0x01, // COLLECTION (Application)
+        0x77, 0x00, 0x00, 0x01, 0x00, //    REPORT_SIZE (65536)
+        0x97, 0x00, 0x00, 0x01, 0x00, //    REPORT_COUNT (65536)
+        0x81, 0x02, //    INPUT (Data, Var, Abs) (Modifier Byte)
+        0xc0, // END_COLLECTION
+    ];
+
     static BOGUS_MINIMAL_BOOT_KEYBOARD_REPORT_DESCRIPTOR_NO_LOG_MIN: &[u8] = &[
         0x05, 0x01, // USAGE_PAGE (Generic Desktop)
         0x09, 0x06, // USAGE (Keyboard)
@@ -1455,6 +1478,12 @@ mod tests {
         let (report_id, error) = bad_input_reports.pop().unwrap();
         assert_eq!(None, report_id);
         assert_eq!(ReportDescriptorError::InvalidReportNoCount, error);
+
+        let ReportDescriptor { mut bad_input_reports, .. } =
+            ReportDescriptorParser::parse(BOGUS_BOOT_KEYBOARD_REPORT_DESCRIPTOR_REPORT_SIZE_COUNT_OVERFLOW).unwrap();
+        let (report_id, error) = bad_input_reports.pop().unwrap();
+        assert_eq!(None, report_id);
+        assert_eq!(ReportDescriptorError::InvalidReportSizeOverflow, error);
 
         let ReportDescriptor { mut bad_input_reports, .. } =
             ReportDescriptorParser::parse(BOGUS_MINIMAL_BOOT_KEYBOARD_REPORT_DESCRIPTOR_NO_LOG_MIN).unwrap();
