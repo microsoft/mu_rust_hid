@@ -24,7 +24,7 @@ use std::{
 };
 
 use clap::{Parser, ValueEnum};
-use hidparser::{parse_report_descriptor, ReportDescriptor, ReportField};
+use hidparser::{ReportDescriptor, ReportField, parse_report_descriptor};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
