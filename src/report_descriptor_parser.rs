@@ -13,11 +13,12 @@
 use alloc::{collections::BTreeMap, vec, vec::Vec};
 
 use crate::{
+    ArrayField, DesignatorIndex, DesignatorRange, LogicalMaximum, LogicalMinimum, PaddingField, PhysicalMaximum,
+    PhysicalMinimum, Report, ReportAttributes, ReportCollection, ReportDescriptor, ReportField, ReportId, StringIndex,
+    StringRange, Unit, UnitExponent, Usage, UsageRange, VariableField,
     item_tokenizer::{DescriptorItemTokenizer, ReportItem, ReportItemType},
     report_data_types::{ReportCount, ReportSize, UsagePage},
-    u32_from_bytes, ArrayField, DesignatorIndex, DesignatorRange, LogicalMaximum, LogicalMinimum, PaddingField,
-    PhysicalMaximum, PhysicalMinimum, Report, ReportAttributes, ReportCollection, ReportDescriptor, ReportField,
-    ReportId, StringIndex, StringRange, Unit, UnitExponent, Usage, UsageRange, VariableField,
+    u32_from_bytes,
 };
 
 /// Defines errors generated during report descriptor parsing.
@@ -514,12 +515,12 @@ mod tests {
     use alloc::vec::Vec;
 
     use crate::{
+        ReportDescriptor, ReportField,
         report_data_types::{
             LogicalMaximum, LogicalMinimum, PhysicalMaximum, PhysicalMinimum, ReportAttributes, ReportId, Unit,
             UnitExponent, Usage, UsagePage, UsageRange,
         },
         report_descriptor_parser::ReportDescriptorError,
-        ReportDescriptor, ReportField,
     };
 
     use super::ReportDescriptorParser;

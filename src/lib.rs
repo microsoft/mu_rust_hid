@@ -156,8 +156,7 @@ fn field_value(
 ) -> Result<i64, FieldAccessError> {
     let mut field_data = field_data(bits, buffer)?;
     let mut raw_value_bytes = [0_u8; 8];
-    let adjusted_max: i64;
-    if i32::from(min).is_negative() {
+    let adjusted_max: i64 = if i32::from(min).is_negative() {
         //logical minimum = negative means that the field is signed (HID 1.1 section 6.2.2.7).
         //determine whether sign-extension is required.
         let sign_position_within_msb = ((bits.len() - 1) % 8) as u8;
@@ -172,11 +171,11 @@ fn field_value(
             raw_value_bytes.fill(0xff);
         }
         //if min is negative, then max is i32
-        adjusted_max = i32::from(max) as i64;
+        i32::from(max) as i64
     } else {
         //if min is zero or positive, then max is u32
-        adjusted_max = u32::from(max) as i64;
-    }
+        u32::from(max) as i64
+    };
 
     raw_value_bytes[..field_data.len()].copy_from_slice(field_data.as_slice());
 
@@ -209,7 +208,7 @@ fn field_range(min: LogicalMinimum, max: LogicalMaximum) -> Option<u32> {
         //logical minimum = negative means that the field is signed.
         i32::from(max).checked_sub(i32::from(min)).and_then(|f| if f > 0 { Some(f as u32) } else { None })
     } else {
-        u32::from(max).checked_sub(u32::from(min)).and_then(|f| if f > 0 { Some(f) } else { None })
+        u32::from(max).checked_sub(u32::from(min)).filter(|&f| f > 0)
     }
 }
 
@@ -373,8 +372,8 @@ mod tests {
     extern crate std;
 
     use crate::{
-        report_data_types::{LogicalMaximum, LogicalMinimum},
         ArrayField, FieldAccessError, VariableField,
+        report_data_types::{LogicalMaximum, LogicalMinimum},
     };
     use alloc::vec;
 

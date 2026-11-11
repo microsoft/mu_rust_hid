@@ -204,10 +204,10 @@ impl Usage {
     /// Creates a Usage from the optional UsagePage and Id.
     pub fn from_page_and_id(page: Option<UsagePage>, id: Usage) -> Self {
         let mut usage = id.0;
-        if let Some(page) = page {
-            if usage & 0xFFFF0000 == 0 {
-                usage |= (page.0 as u32) << 16;
-            }
+        if let Some(page) = page
+            && usage & 0xFFFF0000 == 0
+        {
+            usage |= (page.0 as u32) << 16;
         }
         Usage(usage)
     }
