@@ -81,5 +81,5 @@ jobs:
 
       - template: Steps/UploadCodeCoverage.yml@mu_devops
         parameters:
-          report_dir: $(Build.StagingDirectory)
+          report_dir: $(Build.SourcesDirectory)/target
           install_dependencies: false
