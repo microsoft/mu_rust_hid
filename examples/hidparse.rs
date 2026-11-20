@@ -103,6 +103,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         bad_output_reports,
         features,
         bad_features,
+        ..
     } = parse_report_descriptor(&raw_descriptor).map_err(|_| "Failed to parse descriptor.")?;
 
     if !bad_input_reports.is_empty() {
