@@ -212,16 +212,93 @@ fn field_range(min: LogicalMinimum, max: LogicalMaximum) -> Option<u32> {
     }
 }
 
+/// Identifies a collection occurrence within a parsed report descriptor.
+///
+/// IDs are assigned in descriptor order, starting at zero, and are retained when collection metadata is cloned.
+/// They are not globally unique and must not be used to correlate collections across different descriptors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CollectionId(usize);
+
+impl From<usize> for CollectionId {
+    fn from(value: usize) -> Self {
+        Self(value)
+    }
+}
+
+impl From<CollectionId> for usize {
+    fn from(value: CollectionId) -> Self {
+        value.0
+    }
+}
+
+/// The grouping relationship specified by a HID Collection main item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CollectionType {
+    /// Controls related by their physical source.
+    Physical,
+    /// Controls related by their intended application.
+    Application,
+    /// Logically related controls.
+    Logical,
+    /// Controls grouped into a report.
+    Report,
+    /// Controls grouped into a named array.
+    NamedArray,
+    /// Controls grouped by a usage switch.
+    UsageSwitch,
+    /// Controls grouped by a usage modifier.
+    UsageModifier,
+    /// A reserved collection type (0x07 through 0x7f).
+    Reserved(u8),
+    /// A vendor-defined collection type (0x80 through 0xff).
+    VendorDefined(u8),
+}
+
+impl From<u8> for CollectionType {
+    fn from(value: u8) -> Self {
+        match value {
+            0x00 => Self::Physical,
+            0x01 => Self::Application,
+            0x02 => Self::Logical,
+            0x03 => Self::Report,
+            0x04 => Self::NamedArray,
+            0x05 => Self::UsageSwitch,
+            0x06 => Self::UsageModifier,
+            0x07..=0x7f => Self::Reserved(value),
+            0x80..=0xff => Self::VendorDefined(value),
+        }
+    }
+}
+
+impl From<CollectionType> for u8 {
+    fn from(value: CollectionType) -> Self {
+        match value {
+            CollectionType::Physical => 0x00,
+            CollectionType::Application => 0x01,
+            CollectionType::Logical => 0x02,
+            CollectionType::Report => 0x03,
+            CollectionType::NamedArray => 0x04,
+            CollectionType::UsageSwitch => 0x05,
+            CollectionType::UsageModifier => 0x06,
+            CollectionType::Reserved(value) | CollectionType::VendorDefined(value) => value,
+        }
+    }
+}
+
 /// Describes a report collection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReportCollection {
+    /// The descriptor-local identity of this collection occurrence.
+    pub id: CollectionId,
+    /// The grouping relationship specified by the Collection main item.
+    pub collection_type: CollectionType,
     /// The usage associated with the collection.
     pub usage: Usage,
     /// The designator index associated with the collection.
     pub designator: Option<DesignatorIndex>,
     /// The string index associated with the collection.
     pub string: Option<StringIndex>,
-    /// The list of other collections that this collection is a member of.
+    /// Ancestor collections, ordered from outermost to innermost, excluding this collection.
     pub member_of: Vec<ReportCollection>,
 }
 
@@ -250,11 +327,28 @@ pub struct VariableField {
     pub designator_index: Option<DesignatorIndex>,
     /// Optional string index for this field.
     pub string_index: Option<StringIndex>,
-    /// The set of collections that this field belongs to.
+    /// Enclosing collections, ordered from outermost to innermost.
     pub member_of: Vec<ReportCollection>,
 }
 
 impl VariableField {
+    /// Returns the immediate enclosing collection, or `None` for a field outside any collection.
+    pub fn collection(&self) -> Option<&ReportCollection> {
+        self.member_of.last()
+    }
+
+    /// Returns the outermost enclosing collection, regardless of its collection type.
+    pub fn top_level_collection(&self) -> Option<&ReportCollection> {
+        self.member_of.first()
+    }
+
+    /// Returns the nearest enclosing Application collection.
+    ///
+    /// If Application collections are nested, the innermost one is returned.
+    pub fn application_collection(&self) -> Option<&ReportCollection> {
+        self.member_of.iter().rev().find(|collection| collection.collection_type == CollectionType::Application)
+    }
+
     /// returns the data for this field from the given report buffer
     pub fn field_data(&self, buffer: &[u8]) -> Option<Vec<u8>> {
         field_data(&self.bits, buffer).ok()
@@ -298,11 +392,28 @@ pub struct ArrayField {
     pub designator_list: Vec<DesignatorRange>,
     //  The list of strings associated with this array field.
     pub string_list: Vec<StringRange>,
-    /// The set of collections that this field belongs to.
+    /// Enclosing collections, ordered from outermost to innermost.
     pub member_of: Vec<ReportCollection>,
 }
 
 impl ArrayField {
+    /// Returns the immediate enclosing collection, or `None` for a field outside any collection.
+    pub fn collection(&self) -> Option<&ReportCollection> {
+        self.member_of.last()
+    }
+
+    /// Returns the outermost enclosing collection, regardless of its collection type.
+    pub fn top_level_collection(&self) -> Option<&ReportCollection> {
+        self.member_of.first()
+    }
+
+    /// Returns the nearest enclosing Application collection.
+    ///
+    /// If Application collections are nested, the innermost one is returned.
+    pub fn application_collection(&self) -> Option<&ReportCollection> {
+        self.member_of.iter().rev().find(|collection| collection.collection_type == CollectionType::Application)
+    }
+
     /// returns the data for this field from the given report buffer
     pub fn field_data(&self, buffer: &[u8]) -> Option<Vec<u8>> {
         field_data(&self.bits, buffer).ok()
@@ -348,6 +459,8 @@ pub struct Report {
 /// A collection of input/output/feature reports that are described by a given Report Descriptor.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ReportDescriptor {
+    /// All collection occurrences in descriptor order, including collections without valid report fields.
+    pub collections: Vec<ReportCollection>,
     /// The list of input reports from this report descriptor.
     pub input_reports: Vec<Report>,
     /// The list of input reports (if any) that failed to parse.
@@ -360,6 +473,16 @@ pub struct ReportDescriptor {
     pub features: Vec<Report>,
     /// The list of feature reports (if any) that failed to parse.
     pub bad_features: Vec<(Option<ReportId>, ReportDescriptorError)>,
+}
+
+impl ReportDescriptor {
+    /// Returns each top-level collection once, in descriptor order, without allocating.
+    ///
+    /// Top-level collections have no enclosing collection, regardless of their collection type.
+    /// Empty collections and collections whose reports failed to parse are included.
+    pub fn top_level_collections(&self) -> impl Iterator<Item = &ReportCollection> {
+        self.collections.iter().filter(|collection| collection.member_of.is_empty())
+    }
 }
 
 /// Parse the raw report descriptor in the given byte slice.
