@@ -152,8 +152,9 @@ fn field_value(
     bits: &Range<u32>,
     min: LogicalMinimum,
     max: LogicalMaximum,
+    null_state: bool,
     buffer: &[u8],
-) -> Result<i64, FieldAccessError> {
+) -> Result<Option<i64>, FieldAccessError> {
     let mut field_data = field_data(bits, buffer)?;
     let mut raw_value_bytes = [0_u8; 8];
     let adjusted_max: i64 = if i32::from(min).is_negative() {
@@ -182,9 +183,9 @@ fn field_value(
     let value = i64::from_le_bytes(raw_value_bytes);
 
     if (value < i32::from(min) as i64) || (value > adjusted_max) {
-        Err(FieldAccessError::InvalidFieldValue)
+        if null_state { Ok(None) } else { Err(FieldAccessError::InvalidFieldValue) }
     } else {
-        Ok(i64::from_le_bytes(raw_value_bytes))
+        Ok(Some(value))
     }
 }
 
@@ -212,16 +213,93 @@ fn field_range(min: LogicalMinimum, max: LogicalMaximum) -> Option<u32> {
     }
 }
 
+/// Identifies a collection occurrence within a parsed report descriptor.
+///
+/// IDs are assigned in descriptor order, starting at zero, and are retained when collection metadata is cloned.
+/// They are not globally unique and must not be used to correlate collections across different descriptors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CollectionId(usize);
+
+impl From<usize> for CollectionId {
+    fn from(value: usize) -> Self {
+        Self(value)
+    }
+}
+
+impl From<CollectionId> for usize {
+    fn from(value: CollectionId) -> Self {
+        value.0
+    }
+}
+
+/// The grouping relationship specified by a HID Collection main item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CollectionType {
+    /// Controls related by their physical source.
+    Physical,
+    /// Controls related by their intended application.
+    Application,
+    /// Logically related controls.
+    Logical,
+    /// Controls grouped into a report.
+    Report,
+    /// Controls grouped into a named array.
+    NamedArray,
+    /// Controls grouped by a usage switch.
+    UsageSwitch,
+    /// Controls grouped by a usage modifier.
+    UsageModifier,
+    /// A reserved collection type (0x07 through 0x7f).
+    Reserved(u8),
+    /// A vendor-defined collection type (0x80 through 0xff).
+    VendorDefined(u8),
+}
+
+impl From<u8> for CollectionType {
+    fn from(value: u8) -> Self {
+        match value {
+            0x00 => Self::Physical,
+            0x01 => Self::Application,
+            0x02 => Self::Logical,
+            0x03 => Self::Report,
+            0x04 => Self::NamedArray,
+            0x05 => Self::UsageSwitch,
+            0x06 => Self::UsageModifier,
+            0x07..=0x7f => Self::Reserved(value),
+            0x80..=0xff => Self::VendorDefined(value),
+        }
+    }
+}
+
+impl From<CollectionType> for u8 {
+    fn from(value: CollectionType) -> Self {
+        match value {
+            CollectionType::Physical => 0x00,
+            CollectionType::Application => 0x01,
+            CollectionType::Logical => 0x02,
+            CollectionType::Report => 0x03,
+            CollectionType::NamedArray => 0x04,
+            CollectionType::UsageSwitch => 0x05,
+            CollectionType::UsageModifier => 0x06,
+            CollectionType::Reserved(value) | CollectionType::VendorDefined(value) => value,
+        }
+    }
+}
+
 /// Describes a report collection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReportCollection {
+    /// The descriptor-local identity of this collection occurrence.
+    pub id: CollectionId,
+    /// The grouping relationship specified by the Collection main item.
+    pub collection_type: CollectionType,
     /// The usage associated with the collection.
     pub usage: Usage,
     /// The designator index associated with the collection.
     pub designator: Option<DesignatorIndex>,
     /// The string index associated with the collection.
     pub string: Option<StringIndex>,
-    /// The list of other collections that this collection is a member of.
+    /// Ancestor collections, ordered from outermost to innermost, excluding this collection.
     pub member_of: Vec<ReportCollection>,
 }
 
@@ -250,11 +328,28 @@ pub struct VariableField {
     pub designator_index: Option<DesignatorIndex>,
     /// Optional string index for this field.
     pub string_index: Option<StringIndex>,
-    /// The set of collections that this field belongs to.
+    /// Enclosing collections, ordered from outermost to innermost.
     pub member_of: Vec<ReportCollection>,
 }
 
 impl VariableField {
+    /// Returns the immediate enclosing collection, or `None` for a field outside any collection.
+    pub fn collection(&self) -> Option<&ReportCollection> {
+        self.member_of.last()
+    }
+
+    /// Returns the outermost enclosing collection, regardless of its collection type.
+    pub fn top_level_collection(&self) -> Option<&ReportCollection> {
+        self.member_of.first()
+    }
+
+    /// Returns the nearest enclosing Application collection.
+    ///
+    /// If Application collections are nested, the innermost one is returned.
+    pub fn application_collection(&self) -> Option<&ReportCollection> {
+        self.member_of.iter().rev().find(|collection| collection.collection_type == CollectionType::Application)
+    }
+
     /// returns the data for this field from the given report buffer
     pub fn field_data(&self, buffer: &[u8]) -> Option<Vec<u8>> {
         field_data(&self.bits, buffer).ok()
@@ -265,9 +360,22 @@ impl VariableField {
         set_field_data(&self.bits, data, buffer)
     }
 
-    /// returns the field data as an i64 value.
+    /// Returns the field data as an i64 value, or `None` for a null state or an access error.
+    #[deprecated(note = "Use value() to distinguish HID null states from field access errors")]
     pub fn field_value(&self, buffer: &[u8]) -> Option<i64> {
-        field_value(&self.bits, self.logical_minimum, self.logical_maximum, buffer).ok()
+        self.value(buffer).ok().flatten()
+    }
+
+    /// Returns `Ok(Some(value))` for a value within the field's logical range.
+    ///
+    /// An out-of-range value returns `Ok(None)` when the Null State attribute is set.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FieldAccessError::InvalidBufferSize`] when the buffer does not contain the field,
+    /// or [`FieldAccessError::InvalidFieldValue`] for an out-of-range value without Null State support.
+    pub fn value(&self, buffer: &[u8]) -> Result<Option<i64>, FieldAccessError> {
+        field_value(&self.bits, self.logical_minimum, self.logical_maximum, self.attributes.null_state, buffer)
     }
 
     /// sets the data in this field to the given i64 value.
@@ -298,19 +406,49 @@ pub struct ArrayField {
     pub designator_list: Vec<DesignatorRange>,
     //  The list of strings associated with this array field.
     pub string_list: Vec<StringRange>,
-    /// The set of collections that this field belongs to.
+    /// Enclosing collections, ordered from outermost to innermost.
     pub member_of: Vec<ReportCollection>,
 }
 
 impl ArrayField {
+    /// Returns the immediate enclosing collection, or `None` for a field outside any collection.
+    pub fn collection(&self) -> Option<&ReportCollection> {
+        self.member_of.last()
+    }
+
+    /// Returns the outermost enclosing collection, regardless of its collection type.
+    pub fn top_level_collection(&self) -> Option<&ReportCollection> {
+        self.member_of.first()
+    }
+
+    /// Returns the nearest enclosing Application collection.
+    ///
+    /// If Application collections are nested, the innermost one is returned.
+    pub fn application_collection(&self) -> Option<&ReportCollection> {
+        self.member_of.iter().rev().find(|collection| collection.collection_type == CollectionType::Application)
+    }
+
     /// returns the data for this field from the given report buffer
     pub fn field_data(&self, buffer: &[u8]) -> Option<Vec<u8>> {
         field_data(&self.bits, buffer).ok()
     }
 
-    /// returns the field data as an i64 value.
+    /// Returns the field data as an i64 value, or `None` for a null state or an access error.
+    #[deprecated(note = "Use value() to distinguish HID null states from field access errors")]
     pub fn field_value(&self, buffer: &[u8]) -> Option<i64> {
-        field_value(&self.bits, self.logical_minimum, self.logical_maximum, buffer).ok()
+        self.value(buffer).ok().flatten()
+    }
+
+    /// Returns `Ok(Some(value))` for a value within the field's logical range.
+    ///
+    /// An out-of-range value returns `Ok(None)` when the Null State attribute is set.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FieldAccessError::InvalidBufferSize`] when the buffer does not contain the field,
+    /// or [`FieldAccessError::InvalidFieldValue`] for an out-of-range value without Null State support.
+    pub fn value(&self, buffer: &[u8]) -> Result<Option<i64>, FieldAccessError> {
+        field_value(&self.bits, self.logical_minimum, self.logical_maximum, self.attributes.null_state, buffer)
     }
 
     /// returns the logical ranges of the field.
@@ -348,6 +486,8 @@ pub struct Report {
 /// A collection of input/output/feature reports that are described by a given Report Descriptor.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ReportDescriptor {
+    /// All collection occurrences in descriptor order, including collections without valid report fields.
+    pub collections: Vec<ReportCollection>,
     /// The list of input reports from this report descriptor.
     pub input_reports: Vec<Report>,
     /// The list of input reports (if any) that failed to parse.
@@ -360,6 +500,16 @@ pub struct ReportDescriptor {
     pub features: Vec<Report>,
     /// The list of feature reports (if any) that failed to parse.
     pub bad_features: Vec<(Option<ReportId>, ReportDescriptorError)>,
+}
+
+impl ReportDescriptor {
+    /// Returns each top-level collection once, in descriptor order, without allocating.
+    ///
+    /// Top-level collections have no enclosing collection, regardless of their collection type.
+    /// Empty collections and collections whose reports failed to parse are included.
+    pub fn top_level_collections(&self) -> impl Iterator<Item = &ReportCollection> {
+        self.collections.iter().filter(|collection| collection.member_of.is_empty())
+    }
 }
 
 /// Parse the raw report descriptor in the given byte slice.
@@ -442,6 +592,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn field_value_should_return_field_value() {
         let mut field = VariableField {
             logical_minimum: LogicalMinimum::from(-127_i32),
@@ -556,6 +707,113 @@ mod tests {
         field.logical_maximum = LogicalMaximum::from(u32::MAX);
         let buffer = (1025i16).to_le_bytes();
         assert_eq!(field.field_value(&buffer), Some(1025));
+    }
+
+    #[test]
+    fn value_distinguishes_unsigned_values_null_states_and_errors() {
+        let mut variable =
+            VariableField { bits: 4..8, logical_minimum: 1.into(), logical_maximum: 7.into(), ..Default::default() };
+        let mut array = ArrayField {
+            bits: variable.bits.clone(),
+            logical_minimum: variable.logical_minimum,
+            logical_maximum: variable.logical_maximum,
+            ..Default::default()
+        };
+
+        for null_state in [false, true] {
+            variable.attributes.null_state = null_state;
+            array.attributes.null_state = null_state;
+            for value in [1, 3, 7] {
+                let report = [(value << 4) as u8];
+                assert_eq!(variable.value(&report), Ok(Some(value)));
+                assert_eq!(array.value(&report), Ok(Some(value)));
+            }
+            for report in [[0x00], [0x80], [0xf0]] {
+                let expected = if null_state { Ok(None) } else { Err(FieldAccessError::InvalidFieldValue) };
+                assert_eq!(variable.value(&report), expected);
+                assert_eq!(array.value(&report), expected);
+            }
+            assert_eq!(variable.value(&[]), Err(FieldAccessError::InvalidBufferSize));
+            assert_eq!(array.value(&[]), Err(FieldAccessError::InvalidBufferSize));
+        }
+    }
+
+    #[test]
+    fn value_checks_signed_null_states_after_sign_extension() {
+        let mut variable = VariableField {
+            bits: 3..15,
+            logical_minimum: (-1024).into(),
+            logical_maximum: 1024.into(),
+            ..Default::default()
+        };
+        let mut array = ArrayField {
+            bits: variable.bits.clone(),
+            logical_minimum: variable.logical_minimum,
+            logical_maximum: variable.logical_maximum,
+            ..Default::default()
+        };
+
+        for null_state in [false, true] {
+            variable.attributes.null_state = null_state;
+            array.attributes.null_state = null_state;
+            for value in [-1024_i16, -1, 0, 1024] {
+                let report = ((value as u16) << 3).to_le_bytes();
+                assert_eq!(variable.value(&report), Ok(Some(i64::from(value))));
+                assert_eq!(array.value(&report), Ok(Some(i64::from(value))));
+            }
+            for value in [-1025_i16, 1025] {
+                let report = ((value as u16) << 3).to_le_bytes();
+                let expected = if null_state { Ok(None) } else { Err(FieldAccessError::InvalidFieldValue) };
+                assert_eq!(variable.value(&report), expected);
+                assert_eq!(array.value(&report), expected);
+            }
+            assert_eq!(variable.value(&[0]), Err(FieldAccessError::InvalidBufferSize));
+            assert_eq!(array.value(&[0]), Err(FieldAccessError::InvalidBufferSize));
+        }
+    }
+
+    #[test]
+    fn value_preserves_unsigned_32_bit_values_with_null_state_support() {
+        let variable = VariableField {
+            bits: 0..32,
+            logical_minimum: 0.into(),
+            logical_maximum: u32::MAX.into(),
+            attributes: crate::report_data_types::ReportAttributes { null_state: true, ..Default::default() },
+            ..Default::default()
+        };
+        let array = ArrayField {
+            bits: variable.bits.clone(),
+            logical_minimum: variable.logical_minimum,
+            logical_maximum: variable.logical_maximum,
+            attributes: variable.attributes,
+            ..Default::default()
+        };
+        let report = u32::MAX.to_le_bytes();
+        assert_eq!(variable.value(&report), Ok(Some(i64::from(u32::MAX))));
+        assert_eq!(array.value(&report), Ok(Some(i64::from(u32::MAX))));
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn field_value_preserves_legacy_behavior_for_null_states_and_errors() {
+        let mut variable =
+            VariableField { bits: 0..8, logical_minimum: 0.into(), logical_maximum: 7.into(), ..Default::default() };
+        let mut array = ArrayField {
+            bits: variable.bits.clone(),
+            logical_minimum: variable.logical_minimum,
+            logical_maximum: variable.logical_maximum,
+            ..Default::default()
+        };
+        for null_state in [false, true] {
+            variable.attributes.null_state = null_state;
+            array.attributes.null_state = null_state;
+            assert_eq!(variable.field_value(&[3]), Some(3));
+            assert_eq!(array.field_value(&[3]), Some(3));
+            assert_eq!(variable.field_value(&[8]), None);
+            assert_eq!(array.field_value(&[8]), None);
+            assert_eq!(variable.field_value(&[]), None);
+            assert_eq!(array.field_value(&[]), None);
+        }
     }
 
     #[test]

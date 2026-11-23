@@ -13,9 +13,9 @@
 use alloc::{collections::BTreeMap, vec, vec::Vec};
 
 use crate::{
-    ArrayField, DesignatorIndex, DesignatorRange, LogicalMaximum, LogicalMinimum, PaddingField, PhysicalMaximum,
-    PhysicalMinimum, Report, ReportAttributes, ReportCollection, ReportDescriptor, ReportField, ReportId, StringIndex,
-    StringRange, Unit, UnitExponent, Usage, UsageRange, VariableField,
+    ArrayField, CollectionId, CollectionType, DesignatorIndex, DesignatorRange, LogicalMaximum, LogicalMinimum,
+    PaddingField, PhysicalMaximum, PhysicalMinimum, Report, ReportAttributes, ReportCollection, ReportDescriptor,
+    ReportField, ReportId, StringIndex, StringRange, Unit, UnitExponent, Usage, UsageRange, VariableField,
     item_tokenizer::{DescriptorItemTokenizer, ReportItem, ReportItemType},
     report_data_types::{ReportCount, ReportSize, UsagePage},
     u32_from_bytes,
@@ -100,6 +100,7 @@ pub struct ReportDescriptorParser {
     global_state: Vec<GlobalItemStateTable>,
     local_state: LocalItemStateTable,
     active_collections: Vec<ReportCollection>,
+    collections: Vec<ReportCollection>,
 
     input_reports: BTreeMap<Option<ReportId>, Vec<ReportData>>,
     output_reports: BTreeMap<Option<ReportId>, Vec<ReportData>>,
@@ -113,6 +114,7 @@ impl ReportDescriptorParser {
             global_state: vec![Default::default()],
             local_state: Default::default(),
             active_collections: Vec::new(),
+            collections: Vec::new(),
             input_reports: BTreeMap::new(),
             output_reports: BTreeMap::new(),
             features: BTreeMap::new(),
@@ -167,8 +169,15 @@ impl ReportDescriptorParser {
                 let usage = Usage::from_page_and_id(usage_page, Usage::from(usage_range_start));
                 let designator = self.local_state.designators.first().map(|x| DesignatorIndex::from(x.start()));
                 let string = self.local_state.strings.first().map(|x| StringIndex::from(x.start()));
-                let collection =
-                    ReportCollection { usage, designator, string, member_of: self.active_collections.clone() };
+                let collection = ReportCollection {
+                    id: CollectionId::from(self.collections.len()),
+                    collection_type: CollectionType::from(item.data.first().copied().unwrap_or(0)),
+                    usage,
+                    designator,
+                    string,
+                    member_of: self.active_collections.clone(),
+                };
+                self.collections.push(collection.clone());
                 self.active_collections.push(collection);
             }
             0b1100 => {
@@ -500,6 +509,7 @@ impl ReportDescriptorParser {
         let (features, bad_features) = parser.process_reports(&parser.features);
 
         Ok(ReportDescriptor {
+            collections: parser.collections,
             input_reports,
             bad_input_reports,
             output_reports,
@@ -512,10 +522,10 @@ impl ReportDescriptorParser {
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec::Vec;
+    use alloc::{vec, vec::Vec};
 
     use crate::{
-        ReportDescriptor, ReportField,
+        CollectionId, CollectionType, ReportDescriptor, ReportField,
         report_data_types::{
             LogicalMaximum, LogicalMinimum, PhysicalMaximum, PhysicalMinimum, ReportAttributes, ReportId, Unit,
             UnitExponent, Usage, UsagePage, UsageRange,
@@ -524,6 +534,168 @@ mod tests {
     };
 
     use super::ReportDescriptorParser;
+
+    #[test]
+    fn top_level_collections_include_empty_and_failed_reports_once_in_descriptor_order() {
+        let descriptor = [
+            0x05, 0x01, 0x09, 0x06, 0xa1, 0x01, 0xc0, // Empty Application
+            0x09, 0x06, 0xa1, 0x00, // Physical root with the same usage
+            0x85, 0x01, 0x75, 0x08, 0x95, 0x01, 0x15, 0x00, 0x26, 0xff, 0x00, 0x09, 0x04, 0x81, 0x02, 0x09, 0x05, 0x81,
+            0x02, 0x09, 0x01, 0xa1, 0x02, // Nested Logical collection
+            0x09, 0x06, 0x81, 0x02, 0xc0, 0xc0, 0x09, 0x02, 0xa1, 0x80, // Vendor-defined root
+            0x85, 0x02, 0x15, 0x02, 0x25, 0x01, 0x09, 0x04, 0x81, 0x02, 0xc0, // Invalid logical range
+        ];
+        let parsed = ReportDescriptorParser::parse(&descriptor).unwrap();
+        assert_eq!(parsed.collections.len(), 4);
+        assert!(parsed.input_reports[1].fields.is_empty());
+        assert_eq!(parsed.bad_input_reports.len(), 1);
+        let top_level: Vec<_> = parsed.top_level_collections().collect();
+        assert_eq!(top_level.iter().map(|collection| usize::from(collection.id)).collect::<Vec<_>>(), vec![0, 1, 3]);
+        assert_eq!(top_level[0].collection_type, CollectionType::Application);
+        assert_eq!(top_level[1].collection_type, CollectionType::Physical);
+        assert_eq!(top_level[2].collection_type, CollectionType::VendorDefined(0x80));
+        assert_eq!(top_level[0].usage, top_level[1].usage);
+
+        for field in &parsed.input_reports[0].fields {
+            let ReportField::Variable(field) = field else {
+                panic!("Incorrect field type");
+            };
+            assert_eq!(field.top_level_collection(), Some(top_level[1]));
+            for collection in &field.member_of {
+                assert_eq!(collection, &parsed.collections[usize::from(collection.id)]);
+            }
+        }
+        assert!(ReportDescriptorParser::parse(&[]).unwrap().top_level_collections().next().is_none());
+    }
+
+    #[test]
+    fn collection_types_preserve_standard_reserved_and_vendor_values() {
+        let standard_types = [
+            CollectionType::Physical,
+            CollectionType::Application,
+            CollectionType::Logical,
+            CollectionType::Report,
+            CollectionType::NamedArray,
+            CollectionType::UsageSwitch,
+            CollectionType::UsageModifier,
+        ];
+        for value in 0..=u8::MAX {
+            let descriptor = [
+                0x05, 0x01, 0x09, 0x02, 0xa1, value, 0x75, 0x08, 0x95, 0x01, 0x15, 0x00, 0x26, 0xff, 0x00, 0x09, 0x30,
+                0x81, 0x02, 0xc0,
+            ];
+            let parsed = ReportDescriptorParser::parse(&descriptor).unwrap();
+            let ReportField::Variable(field) = &parsed.input_reports[0].fields[0] else {
+                panic!("Incorrect field type");
+            };
+            let collection_type = field.collection().unwrap().collection_type;
+            match value {
+                0..=6 => assert_eq!(collection_type, standard_types[usize::from(value)]),
+                7..=0x7f => assert_eq!(collection_type, CollectionType::Reserved(value)),
+                0x80..=0xff => assert_eq!(collection_type, CollectionType::VendorDefined(value)),
+            }
+            assert_eq!(u8::from(collection_type), value);
+            assert_eq!(field.application_collection().is_some(), value == 1);
+        }
+    }
+
+    #[test]
+    fn collection_ids_distinguish_siblings_and_survive_report_type_changes() {
+        let mut descriptor = vec![
+            0x05, 0x0d, // USAGE_PAGE (Digitizers)
+            0x75, 0x08, 0x95, 0x01, 0x15, 0x00, 0x26, 0xff, 0x00,
+        ];
+        for finger_count in [2, 1] {
+            descriptor.extend_from_slice(&[0x09, 0x05, 0xa1, 0x01]); // Touch Pad Application
+            for _ in 0..finger_count {
+                descriptor.extend_from_slice(&[
+                    0x09, 0x22, 0xa1, 0x02, // Finger Logical collection
+                    0x85, 0x52, 0x0b, 0x30, 0x00, 0x01, 0x00, 0x81, 0x02, // X Input
+                    0x0b, 0x31, 0x00, 0x01, 0x00, 0x81, 0x02, // Y Input
+                    0x85, 0x07, 0x09, 0x51, 0xb1, 0x02, // Contact Identifier Feature
+                    0x85, 0x08, 0x09, 0x42, 0x91, 0x02, // Tip Switch Output
+                    0xc0,
+                ]);
+            }
+            descriptor.push(0xc0);
+        }
+        let parsed = ReportDescriptorParser::parse(&descriptor).unwrap();
+        assert!(parsed.bad_input_reports.is_empty());
+        assert!(parsed.bad_output_reports.is_empty());
+        assert!(parsed.bad_features.is_empty());
+        assert_eq!(parsed.input_reports[0].fields.len(), 6);
+        assert_eq!(parsed.input_reports[0].size_in_bits, 48);
+
+        for (index, (top_id, finger_id)) in [(0, 1), (0, 2), (3, 4)].into_iter().enumerate() {
+            let ReportField::Variable(x) = &parsed.input_reports[0].fields[index * 2] else {
+                panic!("Incorrect field type");
+            };
+            let ReportField::Variable(y) = &parsed.input_reports[0].fields[index * 2 + 1] else {
+                panic!("Incorrect field type");
+            };
+            let ReportField::Variable(output) = &parsed.output_reports[0].fields[index] else {
+                panic!("Incorrect field type");
+            };
+            let ReportField::Variable(feature) = &parsed.features[0].fields[index] else {
+                panic!("Incorrect field type");
+            };
+            assert_eq!(x.bits, (index * 16) as u32..(index * 16 + 8) as u32);
+            assert_eq!(x.member_of.len(), 2);
+            assert_eq!(x.top_level_collection().unwrap().id, CollectionId::from(top_id));
+            assert_eq!(x.collection().unwrap().id, CollectionId::from(finger_id));
+            assert_eq!(x.collection().unwrap().collection_type, CollectionType::Logical);
+            assert_eq!(x.collection().unwrap().usage, Usage::from(0x000d0022));
+            assert_eq!(x.application_collection(), x.top_level_collection());
+            assert_eq!(x.collection().unwrap().member_of, vec![x.member_of[0].clone()]);
+            assert_eq!(x.member_of, y.member_of);
+            assert_eq!(x.member_of, output.member_of);
+            assert_eq!(x.member_of, feature.member_of);
+        }
+    }
+
+    #[test]
+    fn field_collection_helpers_distinguish_top_level_and_nearest_application() {
+        let mut descriptor = vec![0x75, 0x08, 0x95, 0x01, 0x15, 0x00, 0x26, 0xff, 0x00];
+        let fields = [0x05, 0x07, 0x09, 0x04, 0x81, 0x02, 0x19, 0x00, 0x29, 0x65, 0x81, 0x00];
+        descriptor.extend_from_slice(&fields);
+        descriptor.extend_from_slice(&[0x05, 0x01, 0x09, 0x01, 0xa1, 0x00]); // Physical root
+        descriptor.extend_from_slice(&fields);
+        descriptor.extend_from_slice(&[0x05, 0x01, 0x09, 0x06, 0xa1, 0x01]); // Application
+        descriptor.extend_from_slice(&fields);
+        descriptor.extend_from_slice(&[0x05, 0x01, 0x09, 0x06, 0xa1, 0x01]); // Nested Application
+        descriptor.extend_from_slice(&[0x09, 0x01, 0xa1, 0x02]); // Logical
+        descriptor.extend_from_slice(&fields);
+        descriptor.extend_from_slice(&[0xc0, 0xc0]);
+        descriptor.extend_from_slice(&fields);
+        descriptor.extend_from_slice(&[0xc0, 0xc0]);
+
+        let parsed = ReportDescriptorParser::parse(&descriptor).unwrap();
+        for (index, expected_application) in [None, None, Some(1), Some(2), Some(1)].into_iter().enumerate() {
+            let ReportField::Variable(variable) = &parsed.input_reports[0].fields[index * 2] else {
+                panic!("Incorrect field type");
+            };
+            let ReportField::Array(array) = &parsed.input_reports[0].fields[index * 2 + 1] else {
+                panic!("Incorrect field type");
+            };
+            assert_eq!(variable.member_of, array.member_of);
+            assert_eq!(variable.collection(), array.collection());
+            assert_eq!(variable.top_level_collection(), array.top_level_collection());
+            assert_eq!(variable.application_collection(), array.application_collection());
+            assert_eq!(
+                variable.application_collection().map(|collection| usize::from(collection.id)),
+                expected_application
+            );
+            if index == 0 {
+                assert_eq!(variable.collection(), None);
+                assert_eq!(variable.top_level_collection(), None);
+            } else {
+                assert_eq!(variable.top_level_collection().unwrap().id, CollectionId::from(0));
+                assert_eq!(variable.top_level_collection().unwrap().collection_type, CollectionType::Physical);
+                let expected_immediate_id = [0, 0, 1, 3, 1][index];
+                assert_eq!(variable.collection().unwrap().id, CollectionId::from(expected_immediate_id));
+            }
+        }
+    }
 
     //Sample descriptor from:
     //https://learn.microsoft.com/en-us/windows-hardware/design/component-guidelines/touchscreen-sample-report-descriptors
