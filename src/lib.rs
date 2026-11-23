@@ -152,8 +152,9 @@ fn field_value(
     bits: &Range<u32>,
     min: LogicalMinimum,
     max: LogicalMaximum,
+    null_state: bool,
     buffer: &[u8],
-) -> Result<i64, FieldAccessError> {
+) -> Result<Option<i64>, FieldAccessError> {
     let mut field_data = field_data(bits, buffer)?;
     let mut raw_value_bytes = [0_u8; 8];
     let adjusted_max: i64 = if i32::from(min).is_negative() {
@@ -182,9 +183,9 @@ fn field_value(
     let value = i64::from_le_bytes(raw_value_bytes);
 
     if (value < i32::from(min) as i64) || (value > adjusted_max) {
-        Err(FieldAccessError::InvalidFieldValue)
+        if null_state { Ok(None) } else { Err(FieldAccessError::InvalidFieldValue) }
     } else {
-        Ok(i64::from_le_bytes(raw_value_bytes))
+        Ok(Some(value))
     }
 }
 
@@ -359,9 +360,22 @@ impl VariableField {
         set_field_data(&self.bits, data, buffer)
     }
 
-    /// returns the field data as an i64 value.
+    /// Returns the field data as an i64 value, or `None` for a null state or an access error.
+    #[deprecated(note = "Use value() to distinguish HID null states from field access errors")]
     pub fn field_value(&self, buffer: &[u8]) -> Option<i64> {
-        field_value(&self.bits, self.logical_minimum, self.logical_maximum, buffer).ok()
+        self.value(buffer).ok().flatten()
+    }
+
+    /// Returns `Ok(Some(value))` for a value within the field's logical range.
+    ///
+    /// An out-of-range value returns `Ok(None)` when the Null State attribute is set.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FieldAccessError::InvalidBufferSize`] when the buffer does not contain the field,
+    /// or [`FieldAccessError::InvalidFieldValue`] for an out-of-range value without Null State support.
+    pub fn value(&self, buffer: &[u8]) -> Result<Option<i64>, FieldAccessError> {
+        field_value(&self.bits, self.logical_minimum, self.logical_maximum, self.attributes.null_state, buffer)
     }
 
     /// sets the data in this field to the given i64 value.
@@ -419,9 +433,22 @@ impl ArrayField {
         field_data(&self.bits, buffer).ok()
     }
 
-    /// returns the field data as an i64 value.
+    /// Returns the field data as an i64 value, or `None` for a null state or an access error.
+    #[deprecated(note = "Use value() to distinguish HID null states from field access errors")]
     pub fn field_value(&self, buffer: &[u8]) -> Option<i64> {
-        field_value(&self.bits, self.logical_minimum, self.logical_maximum, buffer).ok()
+        self.value(buffer).ok().flatten()
+    }
+
+    /// Returns `Ok(Some(value))` for a value within the field's logical range.
+    ///
+    /// An out-of-range value returns `Ok(None)` when the Null State attribute is set.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FieldAccessError::InvalidBufferSize`] when the buffer does not contain the field,
+    /// or [`FieldAccessError::InvalidFieldValue`] for an out-of-range value without Null State support.
+    pub fn value(&self, buffer: &[u8]) -> Result<Option<i64>, FieldAccessError> {
+        field_value(&self.bits, self.logical_minimum, self.logical_maximum, self.attributes.null_state, buffer)
     }
 
     /// returns the logical ranges of the field.
@@ -565,6 +592,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn field_value_should_return_field_value() {
         let mut field = VariableField {
             logical_minimum: LogicalMinimum::from(-127_i32),
@@ -679,6 +707,113 @@ mod tests {
         field.logical_maximum = LogicalMaximum::from(u32::MAX);
         let buffer = (1025i16).to_le_bytes();
         assert_eq!(field.field_value(&buffer), Some(1025));
+    }
+
+    #[test]
+    fn value_distinguishes_unsigned_values_null_states_and_errors() {
+        let mut variable =
+            VariableField { bits: 4..8, logical_minimum: 1.into(), logical_maximum: 7.into(), ..Default::default() };
+        let mut array = ArrayField {
+            bits: variable.bits.clone(),
+            logical_minimum: variable.logical_minimum,
+            logical_maximum: variable.logical_maximum,
+            ..Default::default()
+        };
+
+        for null_state in [false, true] {
+            variable.attributes.null_state = null_state;
+            array.attributes.null_state = null_state;
+            for value in [1, 3, 7] {
+                let report = [(value << 4) as u8];
+                assert_eq!(variable.value(&report), Ok(Some(value)));
+                assert_eq!(array.value(&report), Ok(Some(value)));
+            }
+            for report in [[0x00], [0x80], [0xf0]] {
+                let expected = if null_state { Ok(None) } else { Err(FieldAccessError::InvalidFieldValue) };
+                assert_eq!(variable.value(&report), expected);
+                assert_eq!(array.value(&report), expected);
+            }
+            assert_eq!(variable.value(&[]), Err(FieldAccessError::InvalidBufferSize));
+            assert_eq!(array.value(&[]), Err(FieldAccessError::InvalidBufferSize));
+        }
+    }
+
+    #[test]
+    fn value_checks_signed_null_states_after_sign_extension() {
+        let mut variable = VariableField {
+            bits: 3..15,
+            logical_minimum: (-1024).into(),
+            logical_maximum: 1024.into(),
+            ..Default::default()
+        };
+        let mut array = ArrayField {
+            bits: variable.bits.clone(),
+            logical_minimum: variable.logical_minimum,
+            logical_maximum: variable.logical_maximum,
+            ..Default::default()
+        };
+
+        for null_state in [false, true] {
+            variable.attributes.null_state = null_state;
+            array.attributes.null_state = null_state;
+            for value in [-1024_i16, -1, 0, 1024] {
+                let report = ((value as u16) << 3).to_le_bytes();
+                assert_eq!(variable.value(&report), Ok(Some(i64::from(value))));
+                assert_eq!(array.value(&report), Ok(Some(i64::from(value))));
+            }
+            for value in [-1025_i16, 1025] {
+                let report = ((value as u16) << 3).to_le_bytes();
+                let expected = if null_state { Ok(None) } else { Err(FieldAccessError::InvalidFieldValue) };
+                assert_eq!(variable.value(&report), expected);
+                assert_eq!(array.value(&report), expected);
+            }
+            assert_eq!(variable.value(&[0]), Err(FieldAccessError::InvalidBufferSize));
+            assert_eq!(array.value(&[0]), Err(FieldAccessError::InvalidBufferSize));
+        }
+    }
+
+    #[test]
+    fn value_preserves_unsigned_32_bit_values_with_null_state_support() {
+        let variable = VariableField {
+            bits: 0..32,
+            logical_minimum: 0.into(),
+            logical_maximum: u32::MAX.into(),
+            attributes: crate::report_data_types::ReportAttributes { null_state: true, ..Default::default() },
+            ..Default::default()
+        };
+        let array = ArrayField {
+            bits: variable.bits.clone(),
+            logical_minimum: variable.logical_minimum,
+            logical_maximum: variable.logical_maximum,
+            attributes: variable.attributes,
+            ..Default::default()
+        };
+        let report = u32::MAX.to_le_bytes();
+        assert_eq!(variable.value(&report), Ok(Some(i64::from(u32::MAX))));
+        assert_eq!(array.value(&report), Ok(Some(i64::from(u32::MAX))));
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn field_value_preserves_legacy_behavior_for_null_states_and_errors() {
+        let mut variable =
+            VariableField { bits: 0..8, logical_minimum: 0.into(), logical_maximum: 7.into(), ..Default::default() };
+        let mut array = ArrayField {
+            bits: variable.bits.clone(),
+            logical_minimum: variable.logical_minimum,
+            logical_maximum: variable.logical_maximum,
+            ..Default::default()
+        };
+        for null_state in [false, true] {
+            variable.attributes.null_state = null_state;
+            array.attributes.null_state = null_state;
+            assert_eq!(variable.field_value(&[3]), Some(3));
+            assert_eq!(array.field_value(&[3]), Some(3));
+            assert_eq!(variable.field_value(&[8]), None);
+            assert_eq!(array.field_value(&[8]), None);
+            assert_eq!(variable.field_value(&[]), None);
+            assert_eq!(array.field_value(&[]), None);
+        }
     }
 
     #[test]
